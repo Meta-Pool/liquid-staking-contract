@@ -958,4 +958,16 @@ impl MetaPool {
             });
         }
     }
+
+    // TEST SIMULATOR FUNCTIONS
+    // env::attached_deposit() is considered rewards
+    #[payable]
+    pub fn test_simulate_rewards(&mut self){
+        self.total_for_staking += env::attached_deposit();
+    }
+    #[payable]
+    pub fn test_simulate_retrieval(&mut self){
+        self.retrieved_for_unstake_claims += env::attached_deposit();
+    }
+
 }
