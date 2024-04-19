@@ -6,7 +6,7 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::json_types::U128;
 use near_sdk::{
-    env, ext_contract, is_promise_success, log, near_bindgen, Balance, PanicOnDefault,
+    env, ext_contract, is_promise_success, log, near_bindgen, PanicOnDefault, 
     PromiseOrValue,
 };
 
@@ -14,7 +14,7 @@ use near_sdk::{
 use near_sdk::env::BLOCKCHAIN_INTERFACE;
 
 #[global_allocator]
-static ALLOC: near_sdk::wee_alloc::WeeAlloc = near_sdk::wee_alloc::WeeAlloc::INIT;
+//static ALLOC: near_sdk::wee_alloc::WeeAlloc = near_sdk::wee_alloc::WeeAlloc::INIT;
 
 const CONTRACT_VERSION: &str = "2.0.0 BLOCKCHAIN_INTERFACE"; //to test Sputnik V2 remote-upgrade
 

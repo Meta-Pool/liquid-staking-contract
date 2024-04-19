@@ -194,6 +194,14 @@ impl MetaPool {
             shares_from_requested
         };
         self.internal_unstake_shares(account_id, &mut acc, stake_shares_to_burn);
+
+        events::FtBurn {
+            owner_id: &account_id,
+            amount: stake_shares_to_burn.into(),
+            memo: None
+        }
+        .emit();
+
     }
 
     pub(crate) fn internal_unstake_shares(
@@ -589,6 +597,7 @@ impl MetaPool {
         sender_id: &AccountId,
         receiver_id: &AccountId,
         amount: u128,
+        memo: Option<&str>
     ) {
         assert_ne!(
             sender_id, receiver_id,
@@ -610,6 +619,14 @@ impl MetaPool {
 
         self.internal_update_account(&sender_id, &sender_acc);
         self.internal_update_account(&receiver_id, &receiver_acc);
+
+        events::FtTransfer {
+            old_owner_id: &sender_id,
+            new_owner_id: &receiver_id,
+            amount: amount.into(),
+            memo
+        }
+        .emit();
     }
 
     // ft_token, executed after ft_transfer_call,
@@ -651,6 +668,14 @@ impl MetaPool {
                 sender_acc.add_stake_shares(refund_amount, near_amount);
                 self.internal_update_account(&sender_id, &sender_acc);
 
+                events::FtTransfer {
+                    old_owner_id: &sender_id,
+                    new_owner_id: &receiver_id,
+                    amount: amount.into(),
+                    memo: Some("refund")
+                }
+                .emit();
+            
                 log!(
                     "Refund {} from {} to {}",
                     refund_amount,

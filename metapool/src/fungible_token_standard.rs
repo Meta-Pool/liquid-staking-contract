@@ -77,6 +77,7 @@ impl FungibleTokenCore for MetaPool {
             &env::predecessor_account_id(),
             &receiver_id.into(),
             amount.0,
+            memo.as_deref(),
         );
         //log!("env::storage_usage {}",env::storage_usage());
     }
@@ -97,7 +98,12 @@ impl FungibleTokenCore for MetaPool {
         );
 
         let receiver_id: String = receiver_id.into();
-        self.internal_st_near_transfer(&env::predecessor_account_id(), &receiver_id, amount.0);
+        self.internal_st_near_transfer(
+            &env::predecessor_account_id(),
+            &receiver_id,
+            amount.0,
+            memo.as_deref(),
+        );
 
         //TODO add a busy lock to avoid the sender-acc to be deleted
         //while this txn is executing

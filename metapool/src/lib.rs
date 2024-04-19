@@ -44,6 +44,7 @@ pub use reward_meter::*;
 
 pub mod empty_nep_145;
 pub mod fungible_token_standard;
+pub mod events;
 
 // setup_alloc adds a #[cfg(target_arch = "wasm32")] to the global allocator, which prevents the allocator
 // from being used when the contract's main file is used in simulation testing.
@@ -390,6 +391,13 @@ impl MetaPool {
         // check if the liquidity pool needs liquidity, and then use this opportunity to liquidate stnear in the LP by internal-clearing
         // the amount just deposited, might be swapped in the liquid-unstake pool
         self.nslp_try_internal_clearing(amount);
+        events::FtMint {
+            owner_id: &account_id,
+            amount: shares.into(),
+            memo: None
+        }
+        .emit();
+
         shares.into()
     }
 

@@ -1,10 +1,12 @@
+## TODO: migrate to near-workspaces-test (use get-mpdao tests as a model)
+
 ### Glossary
 
 USER DEPOSIT_AND_STAKE: add to epoch_stake_orders (maybe nspl_clearing), increment total_for_stake
 USER UNSTAKE: delayed-unstake, add to epoch_unstake_orders, decrement total_for_stake
 
 DISTRIBUTE STAKE: move from the contract to sps
-DISTRIBUTE UNSTAKE: invoe unsktake in the sp, added to unstaked_and_waiting
+DISTRIBUTE UNSTAKE: invoke unstake in the sp, added to unstaked_and_waiting
 
 RETRIEVE: Move from a sp to the contract
 WITHDRAW: Move from the contract to the user
