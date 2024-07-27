@@ -329,7 +329,11 @@ impl MetaPool {
         self.staker_meta_mult_pct = params.staker_meta_mult_pct;
         self.stnear_sell_meta_mult_pct = params.stnear_sell_meta_mult_pct;
         self.lp_provider_meta_mult_pct = params.lp_provider_meta_mult_pct;
-        self.operator_rewards_fee_basis_points = params.operator_rewards_fee_basis_points;
+
+        // note: self.operator_rewards_fee_basis_points should be only set
+        // via pub fn set_reward_fee, which imposes a cap of 10%
+        // self.operator_rewards_fee_basis_points = params.operator_rewards_fee_basis_points;
+
         self.operator_swap_cut_basis_points = params.operator_swap_cut_basis_points;
         self.treasury_swap_cut_basis_points = params.treasury_swap_cut_basis_points;
 
