@@ -43,8 +43,8 @@ pub mod reward_meter;
 pub use reward_meter::*;
 
 pub mod empty_nep_145;
-pub mod fungible_token_standard;
 pub mod events;
+pub mod fungible_token_standard;
 
 // setup_alloc adds a #[cfg(target_arch = "wasm32")] to the global allocator, which prevents the allocator
 // from being used when the contract's main file is used in simulation testing.
@@ -166,7 +166,7 @@ pub struct MetaPool {
     pub total_stake_shares: u128, //total stNEAR minted
 
     /// META (now mpDAO) is the governance token
-    pub total_meta: u128, // deprecated 
+    pub total_meta: u128, // deprecated
 
     /// The total amount of tokens actually unstaked and in the waiting-delay (the tokens are in the staking pools)
     /// equivalent to sum(sp.unstaked)
@@ -319,8 +319,8 @@ impl MetaPool {
             staking_pools: Vec::new(),
             meta_token_account_id,
             est_meta_rewards_stakers: 0, // (deprecated)
-            est_meta_rewards_lu: 0, // (deprecated)
-            est_meta_rewards_lp: 0, // (deprecated)
+            est_meta_rewards_lu: 0,      // (deprecated)
+            est_meta_rewards_lp: 0,      // (deprecated)
             max_meta_rewards_stakers: 1_000_000 * ONE_NEAR, // (deprecated)
             max_meta_rewards_lu: 50_000 * ONE_NEAR, // (deprecated)
             max_meta_rewards_lp: 100_000 * ONE_NEAR, // (deprecated)
@@ -394,7 +394,7 @@ impl MetaPool {
         events::FtMint {
             owner_id: &account_id,
             amount: shares.into(),
-            memo: None
+            memo: None,
         }
         .emit();
 
@@ -436,10 +436,6 @@ impl MetaPool {
     /*******************/
     /* lockup accounts */
     /*******************/
-    /// Unstakes the exact amount of shares from a lockup account
-    /// The new total unstaked balance will be available for withdrawal in x epochs.
-    /// delayed_unstake, amount_requested is in stNEAR/shares
-    /// return value is the amount of shares
     #[payable]
     pub fn stake_for_lockup(&mut self, lockup_account_id: String) -> U128String {
         assert_lockup_contract_calling();
@@ -531,8 +527,7 @@ impl MetaPool {
     pub fn set_reward_fee(&mut self, basis_points: u16) {
         self.assert_owner_calling();
         assert_one_yocto();
-        assert!(env::attached_deposit() > 0);
-        assert!(basis_points < 1000); // less than 10%
+        assert!(basis_points <= 1000); // less than or equal 10%
         self.operator_rewards_fee_basis_points =
             basis_points.saturating_sub(DEVELOPERS_REWARDS_FEE_BASIS_POINTS);
     }
@@ -641,7 +636,8 @@ impl MetaPool {
 
         log!(
             "st_near owned:{}, to_sell:{}",
-            user_account.stake_shares, st_near_to_sell
+            user_account.stake_shares,
+            st_near_to_sell
         );
 
         assert!(
