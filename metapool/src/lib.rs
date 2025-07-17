@@ -776,6 +776,9 @@ impl MetaPool {
     }
 
     /// remove liquidity from liquidity pool
+    /// "amount" is the amount in NEAR to remove from the pool
+    /// internally the function calculates the proportion of NEAR and stNEAR to remove
+    /// and the amount of shares to burn
     //#[payable]
     pub fn nslp_remove_liquidity(&mut self, amount: U128String) -> RemoveLiquidityResult {
         self.assert_not_busy();

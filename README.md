@@ -14,7 +14,7 @@ What is Meta-Pool and other non-Technical Documentation
 * [Technical Notes](https://narwallets.github.io/meta-pool/technical-notes)
 
 * [NEAR Live Contract Review (video)](https://www.youtube.com/watch?v=4gB-6yoas74)
-### Repositories 
+### Repositories
 
 This is the Smart Contract repository. The Web App UI is at https://github.com/Narwallets/metastaking-webapp
 
@@ -39,7 +39,7 @@ This is the Smart Contract repository. The Web App UI is at https://github.com/N
 #### `1.0.0` - Apr 2021
 
 - Full functionality
-- Simplified user flow 
+- Simplified user flow
 - Desk check testing https://github.com/Narwallets/sc-desk-check-parser
 
 #### `0.1.0` - Nov 2020
@@ -50,10 +50,9 @@ This is the Smart Contract repository. The Web App UI is at https://github.com/N
 - NEAR/stNEAR liquidity pool, Add/Remove liquidity
 - META Minting with rewards
 
-### TO DO & Help needed
+### TO DO
 
-
-#### Smart Contract  
+#### Smart Contract
  - [x] Deposit/withdraw
  - [x] Buy stNEAR/Stake
  - [x] Sell stNEAR/immediate unstake
@@ -64,9 +63,7 @@ This is the Smart Contract repository. The Web App UI is at https://github.com/N
  - [x] NEAR/stNEAR Liquidity Pool, Add/Remove liquidity
  - [x] clearing mechanism on stake to restore liquidity in the NSLP
  - [x] act as a NEP-xxx MULTI-FUN-TOK (multi-token contract). Implement for NEAR, stNEAR and META
- - [ ] Dividends-pool stNEAR/META
  - [x] Staking-loans to whitelisted validators
- - [ ] Emergency Staking (from the nslp) to whitelisted validators
 
 #### Test
  - [x] Simulation tests

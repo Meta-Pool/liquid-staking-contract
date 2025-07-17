@@ -9,16 +9,16 @@ macro_rules! event {
 }
 
 #[macro_export]
-#[cfg(debug_log)]
+#[cfg(feature = "debug_log")]
 macro_rules! debug_log {
     ($($arg:tt)*) => ({
         env::log(format!($($arg)*).as_bytes());
     });
 }
 #[macro_export]
-#[cfg(not (debug_log))]
+#[cfg(not(feature = "debug_log"))]
 macro_rules! debug_log {
-    ($($arg:tt)*) => ({})
+    ($($arg:tt)*) => {{}};
 }
 
 pub fn assert_min_balance(amount: u128) {
@@ -40,22 +40,23 @@ pub fn assert_one_yocto() {
 pub fn assert_lockup_contract_calling() {
     assert!(
         env::predecessor_account_id() == "lockup-meta-pool.near"
-        || env::predecessor_account_id() == "lockup.meta-v2.pool.testnet",
+            || env::predecessor_account_id() == "lockup.meta-v2.pool.testnet",
         "the function can only be operated by lockup-meta-pool.near"
     );
 }
 
 /// verify if it a lockup account
-pub fn is_lockup_account(account_id: &String) -> bool{
-    account_id.ends_with(".lockup.near") 
-    || account_id.ends_with(".lockupy.testnet") 
+pub fn is_lockup_account(account_id: &String) -> bool {
+    account_id.ends_with(".lockup.near") || account_id.ends_with(".lockupy.testnet")
 }
 
 /// assert it is not a lockup account
 pub fn assert_not_lockup_account_calling() {
-    assert!(!is_lockup_account(&env::predecessor_account_id()),"a .lockup.near account can not be used here");
+    assert!(
+        !is_lockup_account(&env::predecessor_account_id()),
+        "a .lockup.near account can not be used here"
+    );
 }
-
 
 pub fn is_promise_success() -> bool {
     assert_eq!(
@@ -73,7 +74,8 @@ pub fn apply_pct(basis_points: u16, amount: u128) -> u128 {
     return (U256::from(basis_points) * U256::from(amount) / U256::from(10_000)).as_u128();
 }
 pub fn apply_multiplier(amount: u128, percentage: u16) -> u128 {
-    return (U256::from(amount) * U256::from(percentage as u64 * 10_u64) / U256::from(100)).as_u128();
+    return (U256::from(amount) * U256::from(percentage as u64 * 10_u64) / U256::from(100))
+        .as_u128();
 }
 
 //-- SHARED COMPUTATIONS
