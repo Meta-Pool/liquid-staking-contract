@@ -24,7 +24,7 @@ pub struct TestContractOld {
 impl TestContract {
     pub fn set_owner(&mut self, owner_id: AccountId) {
         self.assert_owner();
-        self.owner_id = owner_id.into();
+        self.owner_id = owner_id;
     }
 
     // /// Upgrades given contract. Only can be called by owner/DAO.
@@ -67,7 +67,7 @@ impl TestContract {
             saved_message: old.saved_message,
             saved_i32: old.saved_i32,
             last_epoch: old.last_epoch,
-            owner_id: "dao.pool.testnet".into(),
+            owner_id: AccountId::new_unchecked("dao.pool.testnet".to_string()),
         };
         return new; //return new struct, will be stored as contract state
     }

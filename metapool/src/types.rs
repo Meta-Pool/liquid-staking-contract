@@ -194,7 +194,7 @@ pub struct GetContractStateResult {
     pub total_unstake_claims: U128String,
 
     pub retrieved_for_unstake_claims: U128String, // new name
-    pub reserve_for_unstake_claims: U128String, // old name, keep for backward comp
+    pub reserve_for_unstake_claims: U128String,   // old name, keep for backward comp
 
     pub total_meta: U128String,
 
@@ -295,9 +295,9 @@ pub struct StakingPoolJSONInfo {
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct StakingPoolArgItem {
-    pub account_id: AccountId, 
-    pub weight_basis_points: u16
-} 
+    pub account_id: AccountId,
+    pub weight_basis_points: u16,
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]

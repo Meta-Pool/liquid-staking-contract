@@ -1,5 +1,5 @@
 use crate::*;
-use near_sdk::{log, near_bindgen, Promise};
+use near_sdk::{log, near_bindgen, Gas, Promise};
 
 #[near_bindgen]
 impl MetaPool {
@@ -29,7 +29,7 @@ impl MetaPool {
         // do clearing
         self.internal_end_of_epoch_clearing();
         // here, if we have epoch_stake_orders, then we need to stake
-        if self.epoch_stake_orders == 0  { 
+        if self.epoch_stake_orders == 0 {
             // that delta is from some manual-unstake
             log!("self.epoch_stake_orders == 0");
             return false;
@@ -68,11 +68,10 @@ impl MetaPool {
 
     // prev fn continues here
     /// internal launch direct stake on a pool
-    /// **schedules promises** to stake 
+    /// **schedules promises** to stake
     /// Note: if the sp has some sizable unstake pending, the fn will re-stake the unstaked-and-waiting-amount
     /// that amount can be lower than the amount requested to stake
-    fn launch_direct_stake(&mut self, sp_inx:usize, mut amount_to_stake:u128) {
-
+    fn launch_direct_stake(&mut self, sp_inx: usize, mut amount_to_stake: u128) {
         if amount_to_stake > 0 {
             //most unbalanced pool found & available
 
@@ -93,20 +92,16 @@ impl MetaPool {
                 }
 
                 //schedule async stake to re-stake in the pool
-                ext_staking_pool::stake(
-                    amount_to_stake.into(),
-                    &sp.account_id,
-                    NO_DEPOSIT,
-                    gas::staking_pool::STAKE,
-                )
-                .then(ext_self_owner::on_staking_pool_stake_maybe_deposit(
-                    sp_inx,
-                    amount_to_stake,
-                    false,
-                    &env::current_account_id(),
-                    NO_DEPOSIT,
-                    gas::owner_callbacks::ON_STAKING_POOL_DEPOSIT_AND_STAKE,
-                ));
+                ext_staking_pool::ext(sp.account_id.clone())
+                    .with_static_gas(Gas(gas::staking_pool::STAKE))
+                    .stake(amount_to_stake.into())
+                    .then(
+                        ext_self_owner::ext(env::current_account_id())
+                            .with_static_gas(Gas(
+                                gas::owner_callbacks::ON_STAKING_POOL_DEPOSIT_AND_STAKE,
+                            ))
+                            .on_staking_pool_stake_maybe_deposit(sp_inx, amount_to_stake, false),
+                    );
             } else {
                 //here the sp has no sizable unstaked balance, we must deposit_and_stake on the sp from our balance
 
@@ -120,19 +115,17 @@ impl MetaPool {
                 );
 
                 //schedule async stake or deposit_and_stake on that pool
-                ext_staking_pool::deposit_and_stake(
-                    &sp.account_id,
-                    amount_to_stake.into(), //attached amount
-                    gas::staking_pool::DEPOSIT_AND_STAKE,
-                )
-                .then(ext_self_owner::on_staking_pool_stake_maybe_deposit(
-                    sp_inx,
-                    amount_to_stake,
-                    true,
-                    &env::current_account_id(),
-                    NO_DEPOSIT,
-                    gas::owner_callbacks::ON_STAKING_POOL_DEPOSIT_AND_STAKE,
-                ));
+                ext_staking_pool::ext(sp.account_id.clone())
+                    .with_attached_deposit(amount_to_stake.into())
+                    .with_static_gas(Gas(gas::staking_pool::DEPOSIT_AND_STAKE))
+                    .deposit_and_stake()
+                    .then(
+                        ext_self_owner::ext(env::current_account_id())
+                            .with_static_gas(Gas(
+                                gas::owner_callbacks::ON_STAKING_POOL_DEPOSIT_AND_STAKE,
+                            ))
+                            .on_staking_pool_stake_maybe_deposit(sp_inx, amount_to_stake, true),
+                    );
             }
         }
 
@@ -181,7 +174,7 @@ impl MetaPool {
                                                            // We kept the NEAR in the contract and took from unstaked_and_waiting
                                                            // ... unstaked_and_waiting was in their way to be converted in retrieved_for_unstake_claims
                 self.consider_retrieved_for_unstake_claims(amount); // so this is a special case: the NEAR to stake was taken from total_unstaked_and_waiting,
-                                                             // so we compensate and take the NEAR in the contract and consider it reserved for_unstake_claims
+                                                                    // so we compensate and take the NEAR in the contract and consider it reserved for_unstake_claims
             }
             //log event
             event!(
@@ -209,13 +202,16 @@ impl MetaPool {
         self.assert_operator_or_owner();
         self.assert_not_busy();
 
-        assert!(self.epoch_stake_orders > MIN_STAKE_AMOUNT,
-            "self.epoch_stake_orders too low {}", 
+        assert!(
+            self.epoch_stake_orders > MIN_STAKE_AMOUNT,
+            "self.epoch_stake_orders too low {}",
             self.epoch_stake_orders
         );
-        assert!(amount.0 <= self.epoch_stake_orders,
-            "self.epoch_stake_orders is {} you cant manual stake {}", 
-            self.epoch_stake_orders, amount.0
+        assert!(
+            amount.0 <= self.epoch_stake_orders,
+            "self.epoch_stake_orders is {} you cant manual stake {}",
+            self.epoch_stake_orders,
+            amount.0
         );
 
         let sp_inx = inx as usize;
@@ -240,8 +236,11 @@ impl MetaPool {
     /// the stake of the sp is adjusted limited by extra and max-rebalance-unstake
     pub fn rebalance_unstake_sp(&mut self, inx: u16) {
         let max_unstake_for_rebalance = self.max_unstake_for_rebalance();
-        assert!(self.unstaked_for_rebalance + MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT < max_unstake_for_rebalance, 
-            "max unstake for rebalance already reached");
+        assert!(
+            self.unstaked_for_rebalance + MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT
+                < max_unstake_for_rebalance,
+            "max unstake for rebalance already reached"
+        );
         let unstake_rebalance_left = max_unstake_for_rebalance - self.unstaked_for_rebalance;
         self.perform_rebalance(inx, unstake_rebalance_left);
     }
@@ -254,7 +253,7 @@ impl MetaPool {
         assert!(sp_inx < self.staking_pools.len(), "invalid index");
         let sp = &self.staking_pools[sp_inx];
         assert!(!sp.busy_lock, "sp busy");
-        // can not unstake while unstake pending (if it was done on previous epochs) 
+        // can not unstake while unstake pending (if it was done on previous epochs)
         // because it will extend the waiting period
         assert!(
             sp.unstaked == 0 || sp.unstk_req_epoch_height == env::epoch_height(),
@@ -264,28 +263,30 @@ impl MetaPool {
         // limit for rebalance_unstaking is the should_have of the pool
         let should_have = apply_pct(sp.weight_basis_points, self.total_for_staking);
         // if staked, (unstaked in this epoch or unstaked==0) and extra
-        assert!(sp.staked > should_have, 
-            "the sp has not extra stake. assigned weight_bp:{}, stake:{}",sp.weight_basis_points, sp.staked
+        assert!(
+            sp.staked > should_have,
+            "the sp has not extra stake. assigned weight_bp:{}, stake:{}",
+            sp.weight_basis_points,
+            sp.staked
         );
         // has extra, can be unstaked, start rebalance
         let extra = sp.staked - should_have;
-        // check for cap to unstake 
+        // check for cap to unstake
         let to_unstake_for_rebal = std::cmp::min(extra, cap);
 
         // Next call affects:
-        // total_actually_staked, sp.stake & sp.unstake and total_unstaked_and_waiting, 
+        // total_actually_staked, sp.stake & sp.unstake and total_unstaked_and_waiting,
         // but it DOES NOT not affect reserve_for_unstake_claims and also DOES NOT change total_for_stake
         // this means that eventually we will retrieve from the pools, more than required for reserve_for_unstake_claims
         // at that point, the extra amount is set for restake (see fn retrieve_funds_from_a_pool), completing the rebalance
         self.perform_unstake(sp_inx, 0, to_unstake_for_rebal); // unstake for rebalance
     }
 
-
     /// Start a rebalance unstake if needed, returns true if you should call again
     /// it calls get_staking_pool_requiring_unstake(), to get an index and amount
-    /// used by operator when periodically rebalancing the pool 
+    /// used by operator when periodically rebalancing the pool
     /// The amount to unstake is added to unstaked_for_rebalance.
-    /// When these funds are finally withdrawn, 4 epochs from now, the extra NEAR received 
+    /// When these funds are finally withdrawn, 4 epochs from now, the extra NEAR received
     /// (any amount reserved exceeding total_unstake_claims) will be added to epoch_stake_orders, thus completing the rebalance
     /// Note: It could happen that some users perform delayed-unstake during those epochs, that amount will be preserved in the contract,...
     /// ... because total_unstake_claims has priority over rebalance.
@@ -293,35 +294,39 @@ impl MetaPool {
         self.assert_operator_or_owner();
 
         // check for max x% unstaked
-        let max_unstake_for_rebalance = self.max_unstake_for_rebalance() ;
+        let max_unstake_for_rebalance = self.max_unstake_for_rebalance();
 
         if self.unstaked_for_rebalance < max_unstake_for_rebalance {
-
             let unstake_rebalance_left = max_unstake_for_rebalance - self.unstaked_for_rebalance;
 
             if unstake_rebalance_left >= MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT {
-            
                 let gspru = self.internal_get_staking_pool_requiring_unstake();
                 log!(
                     r#"{{"event":"do_rebal_usntk", "extra":{}, "sp_inx":{}, "totExtra":{}, "unblocked":{}, "with_stake":{}}}"#,
-                    gspru.extra/NEAR, gspru.sp_inx, gspru.total_extra/NEAR, gspru.count_unblocked, gspru.count_with_stake
+                    gspru.extra / NEAR,
+                    gspru.sp_inx,
+                    gspru.total_extra / NEAR,
+                    gspru.count_unblocked,
+                    gspru.count_with_stake
                 );
                 // continue only if at least 40% of the pools with stake are "unblocked", i.e. not already waiting for unstake-period and so ready for more unstakes.
                 // and if amount left for rebalance (total_extra) is more than already unstaked_for_rebalance
                 // and if selected sp assigned=0 OR what's to rebalance is at least 0.05% of TFS (if there's some unbalance worth solving)
-                if gspru.count_unblocked as u64 >= gspru.count_with_stake as u64 * 40 / 100 && 
-                    ( self.staking_pools[gspru.sp_inx as usize].weight_basis_points == 0 || 
-                        gspru.total_extra - self.unstaked_for_rebalance > self.total_for_staking / 2000 )
+                if gspru.count_unblocked as u64 >= gspru.count_with_stake as u64 * 40 / 100
+                    && (self.staking_pools[gspru.sp_inx as usize].weight_basis_points == 0
+                        || gspru.total_extra - self.unstaked_for_rebalance
+                            > self.total_for_staking / 2000)
                 {
                     let to_unstake_for_rebal = std::cmp::min(gspru.extra, unstake_rebalance_left);
                     // Next call affects:
-                    // total_actually_staked, sp.stake & sp.unstake and total_unstaked_and_waiting, 
+                    // total_actually_staked, sp.stake & sp.unstake and total_unstaked_and_waiting,
                     // but it DOES NOT not affect reserve_for_unstake_claims and also DOES NOT change total_for_stake
                     // this means that eventually we will retrieve from the pools, more than required for reserve_for_unstake_claims
                     // at that point, the extra amount is set for restake (see fn retrieve_funds_from_a_pool), completing the rebalance
                     self.perform_unstake(gspru.sp_inx as usize, 0, to_unstake_for_rebal); // unstake for rebalance
-                    
-                    return unstake_rebalance_left - to_unstake_for_rebal >= MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT; // call again?
+
+                    return unstake_rebalance_left - to_unstake_for_rebal
+                        >= MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT; // call again?
                 }
             }
         }
@@ -350,7 +355,7 @@ impl MetaPool {
         let mut unstake_from_orders = self.epoch_unstake_orders;
         let mut unstake_from_rebalance = 0;
 
-        // resulting "amount_to_unstake" can be lower than total_to_unstake, according to conditions in get_staking_pool_requiring_unstake 
+        // resulting "amount_to_unstake" can be lower than total_to_unstake, according to conditions in get_staking_pool_requiring_unstake
         let gspru = self.internal_get_staking_pool_requiring_unstake();
 
         log!(
@@ -362,14 +367,18 @@ impl MetaPool {
         if gspru.extra > 0 {
             if gspru.extra <= self.epoch_unstake_orders {
                 unstake_from_orders = gspru.extra // no more than what the pool has extra
-            }
-            else { // more extra in the sp that the amount ordered
+            } else {
+                // more extra in the sp that the amount ordered
                 // check if we can seize this opportunity to also unstake for rebalance
                 let max_unstake_for_rebalance = self.max_unstake_for_rebalance();
                 if self.unstaked_for_rebalance < max_unstake_for_rebalance {
-                    let cap_to_extra_unstake_for_rebalance = max_unstake_for_rebalance - self.unstaked_for_rebalance;
-                    if cap_to_extra_unstake_for_rebalance > 1*NEAR {
-                        unstake_from_rebalance = std::cmp::min(cap_to_extra_unstake_for_rebalance, gspru.extra - unstake_from_orders);
+                    let cap_to_extra_unstake_for_rebalance =
+                        max_unstake_for_rebalance - self.unstaked_for_rebalance;
+                    if cap_to_extra_unstake_for_rebalance > 1 * NEAR {
+                        unstake_from_rebalance = std::cmp::min(
+                            cap_to_extra_unstake_for_rebalance,
+                            gspru.extra - unstake_from_orders,
+                        );
                     }
                 }
             }
@@ -379,7 +388,11 @@ impl MetaPool {
             // only if the amount justifies tx-fee
             // most unbalanced pool found & available
             // continue with generating the promise for async cross-contract call to unstake
-            self.perform_unstake(gspru.sp_inx as usize, unstake_from_orders, unstake_from_rebalance);
+            self.perform_unstake(
+                gspru.sp_inx as usize,
+                unstake_from_orders,
+                unstake_from_rebalance,
+            );
             return self.epoch_unstake_orders > 0; // if needs to be called again
         } else {
             return false;
@@ -389,12 +402,12 @@ impl MetaPool {
     // two prev fns continue here
     // execute unstake on sp[inx] by amount
     // if is_rebalance then it does no consider this unstake originated in epoch_unstake_orders
-    fn perform_unstake(&mut self, 
-        sp_inx: usize, 
-        amount_from_unstake_orders: u128, 
+    fn perform_unstake(
+        &mut self,
+        sp_inx: usize,
+        amount_from_unstake_orders: u128,
         amount_from_rebalance: u128,
-    )
-    {
+    ) {
         let total_amount = amount_from_unstake_orders + amount_from_rebalance;
         if total_amount == 0 {
             return;
@@ -404,14 +417,14 @@ impl MetaPool {
         assert!(self.total_actually_staked >= total_amount, "IUN");
         assert!(sp_inx < self.staking_pools.len(), "invalid index");
         let sp = &mut self.staking_pools[sp_inx];
-        assert!(!sp.busy_lock,"sp is busy");
+        assert!(!sp.busy_lock, "sp is busy");
         assert!(
             sp.staked >= total_amount,
             "only {} staked can not unstake {}",
             sp.staked,
             total_amount,
         );
-        
+
         self.contract_busy = true;
         sp.busy_lock = true;
 
@@ -420,32 +433,29 @@ impl MetaPool {
         self.epoch_unstake_orders -= amount_from_unstake_orders; // preventively consider the unstake_order fulfilled
 
         //launch async to un-stake from the pool
-        ext_staking_pool::unstake(
-            total_amount.into(),
-            &sp.account_id,
-            NO_DEPOSIT,
-            gas::staking_pool::UNSTAKE,
-        )
-        .then(ext_self_owner::on_staking_pool_unstake(
-            sp_inx,
-            amount_from_unstake_orders.into(),
-            amount_from_rebalance.into(),
-            //extra async call args
-            &env::current_account_id(),
-            NO_DEPOSIT,
-            gas::owner_callbacks::ON_STAKING_POOL_UNSTAKE,
-        ));
+        ext_staking_pool::ext(sp.account_id.clone())
+            .with_static_gas(Gas(gas::staking_pool::UNSTAKE))
+            .unstake(total_amount.into())
+            .then(
+                ext_self_owner::ext(env::current_account_id())
+                    .with_static_gas(Gas(gas::owner_callbacks::ON_STAKING_POOL_UNSTAKE))
+                    .on_staking_pool_unstake(
+                        sp_inx,
+                        amount_from_unstake_orders.into(),
+                        amount_from_rebalance.into(),
+                    ),
+            );
     }
     /// The prev fn continues here
     /// Called after the given amount was unstaked at the staking pool contract.
     /// This method needs to update staking pool status.
     #[private]
-    pub fn on_staking_pool_unstake(&mut self, 
-        sp_inx: usize, 
-        amount_from_unstake_orders: U128String, 
-        amount_from_rebalance: U128String, 
-    ) 
-    {
+    pub fn on_staking_pool_unstake(
+        &mut self,
+        sp_inx: usize,
+        amount_from_unstake_orders: U128String,
+        amount_from_rebalance: U128String,
+    ) {
         let sp = &mut self.staking_pools[sp_inx];
         let total_amount = amount_from_unstake_orders.0 + amount_from_rebalance.0;
 
@@ -471,7 +481,12 @@ impl MetaPool {
             self.epoch_unstake_orders += amount_from_unstake_orders.0; // undo preventive action considering the order fulfilled
         }
 
-        log!("Unstaking of {} at @{} {}", total_amount, sp.account_id, result);
+        log!(
+            "Unstaking of {} at @{} {}",
+            total_amount,
+            sp.account_id,
+            result
+        );
 
         //WARN: This is a callback after-cross-contract-call method
         //busy locks must be saved false in the state, this method SHOULD NOT PANIC
@@ -484,7 +499,11 @@ impl MetaPool {
     pub fn set_busy(&mut self, value: bool) {
         assert_one_yocto();
         self.assert_operator_or_owner();
-        assert!(self.contract_busy != value,"contract_busy is already {}",value);
+        assert!(
+            self.contract_busy != value,
+            "contract_busy is already {}",
+            value
+        );
         self.contract_busy = value;
     }
     //operator manual set sp.busy_lock
@@ -497,7 +516,12 @@ impl MetaPool {
         assert!(inx < self.staking_pools.len());
 
         let sp = &mut self.staking_pools[inx];
-        assert!(sp.busy_lock != value,"sp[{}].busy_lock is already {}",inx,value);
+        assert!(
+            sp.busy_lock != value,
+            "sp[{}].busy_lock is already {}",
+            inx,
+            value
+        );
         sp.busy_lock = value;
     }
 
@@ -544,20 +568,14 @@ impl MetaPool {
         //    overflow when subtracting staked from unstaked or vise-versa.
 
         //query our current unstaked amount
-        return ext_staking_pool::get_account_unstaked_balance(
-            env::current_account_id(),
-            //promise params
-            &sp.account_id,
-            NO_DEPOSIT,
-            gas::staking_pool::GET_ACCOUNT_TOTAL_BALANCE,
-        )
-        .then(ext_self_owner::on_get_sp_unstaked_balance(
-            inx,
-            //promise params
-            &env::current_account_id(),
-            NO_DEPOSIT,
-            gas::owner_callbacks::ON_GET_SP_UNSTAKED_BALANCE,
-        ));
+        return ext_staking_pool::ext(sp.account_id.clone())
+            .with_static_gas(Gas(gas::staking_pool::GET_ACCOUNT_TOTAL_BALANCE))
+            .get_account_unstaked_balance(env::current_account_id())
+            .then(
+                ext_self_owner::ext(env::current_account_id())
+                    .with_static_gas(Gas(gas::owner_callbacks::ON_GET_SP_UNSTAKED_BALANCE))
+                    .on_get_sp_unstaked_balance(inx),
+            );
     }
 
     /// prev fn continues here - sync_unstaked_balance
@@ -650,20 +668,14 @@ impl MetaPool {
         sp.busy_lock = true;
 
         //query our current balance (includes staked+unstaked+staking rewards)
-        ext_staking_pool::get_account_total_balance(
-            env::current_account_id(),
-            //promise params
-            &sp.account_id,
-            NO_DEPOSIT,
-            gas::staking_pool::GET_ACCOUNT_TOTAL_BALANCE,
-        )
-        .then(ext_self_owner::on_get_sp_total_balance(
-            inx,
-            //promise params
-            &env::current_account_id(),
-            NO_DEPOSIT,
-            gas::owner_callbacks::ON_GET_SP_TOTAL_BALANCE,
-        ));
+        ext_staking_pool::ext(sp.account_id.clone())
+            .with_static_gas(Gas(gas::staking_pool::GET_ACCOUNT_TOTAL_BALANCE))
+            .get_account_total_balance(env::current_account_id())
+            .then(
+                ext_self_owner::ext(env::current_account_id())
+                    .with_static_gas(Gas(gas::owner_callbacks::ON_GET_SP_TOTAL_BALANCE))
+                    .on_get_sp_total_balance(inx),
+            );
     }
 
     /// prev fn continues here
@@ -765,8 +777,10 @@ impl MetaPool {
             let developers_fee_shares = self.stake_shares_from_amount(developers_fee);
             // Now add the newly minted shares. The fee is taken by making share price increase slightly smaller
             self.add_extra_minted_shares(self.operator_account_id.clone(), operator_fee_shares);
-            self.add_extra_minted_shares(DEVELOPERS_ACCOUNT_ID.into(), developers_fee_shares);
-
+            self.add_extra_minted_shares(
+                AccountId::new_unchecked(DEVELOPERS_ACCOUNT_ID.into()),
+                developers_fee_shares,
+            );
         }
     }
 
@@ -833,25 +847,19 @@ impl MetaPool {
         sp.busy_lock = true;
 
         //return promise
-        return ext_staking_pool::withdraw_all(
-            //promise params:
-            &sp.account_id,
-            NO_DEPOSIT,
-            gas::staking_pool::WITHDRAW,
-        )
-        .then(ext_self_owner::on_retrieve_from_staking_pool(
-            inx,
-            //promise params:
-            &env::current_account_id(),
-            NO_DEPOSIT,
-            gas::owner_callbacks::ON_STAKING_POOL_WITHDRAW,
-        ));
+        return ext_staking_pool::ext(sp.account_id.clone())
+            .with_static_gas(Gas(gas::staking_pool::WITHDRAW))
+            .withdraw_all()
+            .then(
+                ext_self_owner::ext(env::current_account_id())
+                    .with_static_gas(Gas(gas::owner_callbacks::ON_STAKING_POOL_WITHDRAW))
+                    .on_retrieve_from_staking_pool(inx),
+            );
     }
     //prev fn continues here
     /// This method needs to update staking pool busyLock
     #[private]
     pub fn on_retrieve_from_staking_pool(&mut self, inx: u16) -> U128String {
-
         let sp = &mut self.staking_pools[inx as usize];
         let sp_account_id = sp.account_id.clone();
         let amount = sp.unstaked; // we retrieved all
@@ -872,7 +880,7 @@ impl MetaPool {
             self.total_unstaked_and_waiting = // contract total_unstaked_and_waiting decremented...
                 self.total_unstaked_and_waiting.saturating_sub(amount); // ... because is no longer waiting
             self.contract_account_balance += amount; // the amount is now in the contract balance
-            //log event
+                                                     //log event
             event!(
                 r#"{{"event":"retrieve","sp":"{}","amount":"{}"}}"#,
                 sp_account_id,
@@ -880,7 +888,6 @@ impl MetaPool {
             );
             // the amount retrieved should be considered "retrieved_for_unstake_claims" until the user calls withdraw_unstaked
             self.consider_retrieved_for_unstake_claims(amount);
-
         } else {
             result = "has failed";
             retrieved_amount = 0;
@@ -891,7 +898,6 @@ impl MetaPool {
             sp_account_id,
             result
         );
-
 
         return retrieved_amount.into();
     }
@@ -910,7 +916,7 @@ impl MetaPool {
     // e.g. stake-orders: 500, unstake-orders:500 => net: 0 so keep 500 to fulfill unstake claims after 4 epochs.
     //
     pub fn end_of_epoch_clearing(&mut self) {
-        self.internal_end_of_epoch_clearing() 
+        self.internal_end_of_epoch_clearing()
     }
 
     /// compute max cap for the unstakes-for-rebalance
@@ -918,5 +924,4 @@ impl MetaPool {
     fn max_unstake_for_rebalance(&self) -> u128 {
         apply_pct(self.unstake_for_rebalance_cap_bp, self.total_for_staking)
     }
-
 }

@@ -5,10 +5,8 @@ use near_contract_standards::fungible_token::{
 };
 
 use near_sdk::collections::LazyOption;
-use near_sdk::json_types::{ValidAccountId, U128};
-use near_sdk::{
-    env, near_bindgen, AccountId, Balance, Gas, PromiseOrValue
-};
+use near_sdk::json_types::U128;
+use near_sdk::{env, near_bindgen, AccountId, Gas, PromiseOrValue};
 
 use crate::*;
 
@@ -23,7 +21,7 @@ pub trait FungibleTokenReceiver {
 }
 
 #[ext_contract(ext_self)]
-trait FungibleTokenResolver {
+pub trait MetaPoolResolver {
     fn ft_resolve_transfer(
         &mut self,
         sender_id: AccountId,
@@ -32,12 +30,10 @@ trait FungibleTokenResolver {
     ) -> U128;
 }
 
-const GAS_FOR_FT_TRANSFER_CALL: Gas = 30_000_000_000_000;
-const GAS_FOR_RESOLVE_TRANSFER: Gas = 11_000_000_000_000;
-const FIVE_TGAS: Gas = 5_000_000_000_000;
-const ONE_TGAS: Gas = 1_000_000_000_000;
-
-const NO_DEPOSIT: Balance = 0;
+const GAS_FOR_FT_TRANSFER_CALL: Gas = Gas(30_000_000_000_000);
+const GAS_FOR_RESOLVE_TRANSFER: Gas = Gas(11_000_000_000_000);
+const FIVE_TGAS: Gas = Gas(5_000_000_000_000);
+const ONE_TGAS: Gas = Gas(1_000_000_000_000);
 
 fn ft_metadata_default() -> FungibleTokenMetadata {
     FungibleTokenMetadata {
@@ -45,7 +41,7 @@ fn ft_metadata_default() -> FungibleTokenMetadata {
         name: "Staked NEAR".to_string(),
         symbol: "STNEAR".to_string(),
         icon: Some(r#"data:image/svg+xml,%3csvg width='96' height='96' viewBox='0 0 96 96' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='96' height='96' rx='48' fill='white'/%3e%3cpath fill-rule='evenodd' clip-rule='evenodd' d='M48.0006 20L41.2575 26.7431L48.0006 33.4862L54.7437 26.7431L48.0006 20ZM37.281 30.7188L30.7144 37.2853L47.9998 54.5707L65.2851 37.2853L58.7186 30.7188L47.9998 41.4376L37.281 30.7188ZM26.7384 41.261L19.9953 48.0041L47.9995 76.0083L76.0037 48.0041L69.2606 41.2611L47.9995 62.5221L26.7384 41.261Z' fill='%23231B51'/%3e%3c/svg%3e"#.into()),
-        reference: Some("https://metapool.app".into()), 
+        reference: Some("https://metapool.app".into()),
         reference_hash: None,
         decimals: 24,
     }
@@ -66,7 +62,7 @@ impl FungibleTokenCore for MetaPool {
     #[payable]
     fn ft_transfer(
         &mut self,
-        receiver_id: ValidAccountId, // ValidAccountId does not adds gas consumption
+        receiver_id: AccountId,
         amount: U128,
         #[allow(unused)] memo: Option<String>,
     ) {
@@ -75,7 +71,7 @@ impl FungibleTokenCore for MetaPool {
         //log!("env::storage_usage {}",env::storage_usage());
         self.internal_st_near_transfer(
             &env::predecessor_account_id(),
-            &receiver_id.into(),
+            &receiver_id,
             amount.0,
             memo.as_deref(),
         );
@@ -85,7 +81,7 @@ impl FungibleTokenCore for MetaPool {
     #[payable]
     fn ft_transfer_call(
         &mut self,
-        receiver_id: ValidAccountId,
+        receiver_id: AccountId,
         amount: U128,
         #[allow(unused)] memo: Option<String>,
         msg: String,
@@ -93,11 +89,10 @@ impl FungibleTokenCore for MetaPool {
         assert_one_yocto();
         assert!(
             env::prepaid_gas() > GAS_FOR_FT_TRANSFER_CALL + GAS_FOR_RESOLVE_TRANSFER + FIVE_TGAS,
-            "gas required {}",
+            "gas required {:?}",
             GAS_FOR_FT_TRANSFER_CALL + GAS_FOR_RESOLVE_TRANSFER + FIVE_TGAS
         );
 
-        let receiver_id: String = receiver_id.into();
         self.internal_st_near_transfer(
             &env::predecessor_account_id(),
             &receiver_id,
@@ -109,25 +104,19 @@ impl FungibleTokenCore for MetaPool {
         //while this txn is executing
         //self.busy = true;
 
-        ext_ft_receiver::ft_on_transfer(
-            env::predecessor_account_id(),
-            amount,
-            msg,
-            //promise params:
-            &receiver_id, //contract
-            NO_DEPOSIT,   //attached native NEAR amount
-            env::prepaid_gas() - GAS_FOR_FT_TRANSFER_CALL - GAS_FOR_RESOLVE_TRANSFER - ONE_TGAS, // set almost all remaining gas for ft_on_transfer
-        )
-        .then(ext_self::ft_resolve_transfer(
-            env::predecessor_account_id(),
-            receiver_id,
-            amount,
-            //promise params:
-            &env::current_account_id(), //contract
-            NO_DEPOSIT,                 //attached native NEAR amount
-            GAS_FOR_RESOLVE_TRANSFER,
-        ))
-        .into()
+        // Call ft_on_transfer on receiver
+        ext_ft_receiver::ext(receiver_id.clone())
+            .with_static_gas(
+                env::prepaid_gas() - GAS_FOR_FT_TRANSFER_CALL - GAS_FOR_RESOLVE_TRANSFER - ONE_TGAS,
+            )
+            .ft_on_transfer(env::predecessor_account_id(), amount, msg)
+            .then(
+                // Call ft_resolve_transfer on self
+                ext_self::ext(env::current_account_id())
+                    .with_static_gas(GAS_FOR_RESOLVE_TRANSFER)
+                    .ft_resolve_transfer(env::predecessor_account_id(), receiver_id, amount),
+            )
+            .into()
     }
 
     //stNEAR total supply
@@ -135,11 +124,10 @@ impl FungibleTokenCore for MetaPool {
         self.total_stake_shares.into()
     }
 
-    fn ft_balance_of(&self, account_id: ValidAccountId) -> U128 {
-        if let Some(acc) = self.accounts.get(&account_id.into()) {
+    fn ft_balance_of(&self, account_id: AccountId) -> U128 {
+        if let Some(acc) = self.accounts.get(&account_id) {
             acc.stake_shares.into()
-        }
-        else {
+        } else {
             0.into()
         }
     }
@@ -153,11 +141,10 @@ impl FungibleTokenResolver for MetaPool {
     #[private]
     fn ft_resolve_transfer(
         &mut self,
-        sender_id: ValidAccountId,
-        receiver_id: ValidAccountId,
+        sender_id: AccountId,
+        receiver_id: AccountId,
         amount: U128,
     ) -> U128 {
-        let sender_id: AccountId = sender_id.into();
         let (used_amount, burned_amount) =
             self.int_ft_resolve_transfer(&sender_id, receiver_id, amount);
         if burned_amount > 0 {

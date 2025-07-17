@@ -4,11 +4,11 @@ use near_sdk::{near_bindgen, serde::Serialize};
 #[derive(Serialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct GSPRUResultJson {
-    sp_inx:u16, 
-    extra:U128String, 
-    count_unblocked:u16,
-    count_with_stake:u16,
-    total_extra:U128String
+    sp_inx: u16,
+    extra: U128String,
+    count_unblocked: u16,
+    count_with_stake: u16,
+    total_extra: U128String,
 }
 
 #[near_bindgen]
@@ -42,7 +42,7 @@ impl MetaPool {
             let elem = &self.staking_pools[inx];
             result.push(StakingPoolJSONInfo {
                 inx: inx as u16,
-                account_id: elem.account_id.clone(),
+                account_id: elem.account_id.to_string(),
                 weight_basis_points: elem.weight_basis_points,
                 staked: elem.staked.into(),
                 unstaked: elem.unstaked.into(),
@@ -70,19 +70,23 @@ impl MetaPool {
     pub fn add_staking_pool(&mut self, account_id: AccountId) {
         self.assert_operator_or_owner();
         assert!(
-            account_id.ends_with(".poolv1.near") 
-                || account_id.ends_with(".pool.near") 
-                || account_id.ends_with(".pool.f863973.m0") 
-                || account_id.ends_with(".testnet"),
-            "invalid staking-pool contract account {}", account_id);
+            account_id.to_string().ends_with(".poolv1.near")
+                || account_id.to_string().ends_with(".pool.near")
+                || account_id.to_string().ends_with(".pool.f863973.m0")
+                || account_id.to_string().ends_with(".testnet"),
+            "invalid staking-pool contract account {}",
+            account_id
+        );
         // assert that is not already in the list
         assert!(
-            self.staking_pools.iter().find(|x| x.account_id==account_id).is_none(),
+            self.staking_pools
+                .iter()
+                .find(|x| x.account_id == account_id)
+                .is_none(),
             "already in the list"
         );
         // not in list, add
-        self.staking_pools
-            .push(StakingPoolInfo::new(account_id, 0));
+        self.staking_pools.push(StakingPoolInfo::new(account_id, 0));
     }
 
     /// update existing staking pools list, field weight_basis_points
@@ -93,27 +97,34 @@ impl MetaPool {
         assert_one_yocto();
         self.assert_operator_or_owner();
         // make sure no additions or removals
-        assert_eq!(list.len(),self.staking_pools.len());
+        assert_eq!(list.len(), self.staking_pools.len());
         // process the list
         let mut total_weight = 0;
         for sp_inx in 0..list.len() {
             // assert same order
-            assert_eq!(self.staking_pools[sp_inx].account_id, list[sp_inx].account_id);
+            assert_eq!(
+                self.staking_pools[sp_inx].account_id,
+                list[sp_inx].account_id
+            );
             // get weight_basis_points to set
             let bp = list[sp_inx].weight_basis_points;
             // no staking pool can have 50% or more
-            assert!(bp<5000);
+            assert!(bp < 5000);
             // if there's a change
             if self.staking_pools[sp_inx].weight_basis_points != bp {
                 // check pool is not busy
-                assert!(!self.staking_pools[sp_inx].busy_lock,"sp {} is busy",sp_inx);
+                assert!(
+                    !self.staking_pools[sp_inx].busy_lock,
+                    "sp {} is busy",
+                    sp_inx
+                );
                 // set new value
                 self.staking_pools[sp_inx].weight_basis_points = bp;
             }
             // keep totals
             total_weight += bp;
         }
-        assert_eq!(total_weight,10000);
+        assert_eq!(total_weight, 10000);
     }
 
     //--------------------------------------------------
@@ -228,7 +239,11 @@ impl MetaPool {
             standards: vec!["NEP-141".into(), "NEP-145".into(), "SP".into()], //SP=>core-contracts/Staking-pool
             webAppUrl: self.web_app_url.clone(),
             developersAccountId: DEVELOPERS_ACCOUNT_ID.into(),
-            auditorAccountId: self.auditor_account_id.clone(),
+            auditorAccountId: if self.auditor_account_id.is_some() {
+                Some(self.auditor_account_id.as_ref().unwrap().to_string())
+            } else {
+                None
+            },
         };
     }
 
@@ -242,13 +257,13 @@ impl MetaPool {
             None
         };
         self.auditor_account_id = if auditor_account_id.len() > 0 {
-            Some(auditor_account_id)
+            Some(AccountId::new_unchecked(auditor_account_id))
         } else {
             None
         };
     }
 
-    // simple fn to get st_near_price for use by cross-contract calls 
+    // simple fn to get st_near_price for use by cross-contract calls
     pub fn get_st_near_price(&self) -> U128String {
         // get how many near one stNEAR is worth
         self.amount_from_stake_shares(ONE_E24).into()
@@ -338,7 +353,7 @@ impl MetaPool {
         self.treasury_swap_cut_basis_points = params.treasury_swap_cut_basis_points;
 
         self.min_deposit_amount = params.min_deposit_amount.0;
-        assert!(params.unstake_for_rebalance_cap_bp<2000); // hard coded limit, no more than 20%
+        assert!(params.unstake_for_rebalance_cap_bp < 2000); // hard coded limit, no more than 20%
         self.unstake_for_rebalance_cap_bp = params.unstake_for_rebalance_cap_bp;
     }
 
@@ -371,7 +386,7 @@ impl MetaPool {
 
         return StakingPoolJSONInfo {
             inx,
-            account_id: sp.account_id.clone(),
+            account_id: sp.account_id.to_string(),
             weight_basis_points: sp.weight_basis_points.clone(),
             staked: sp.staked.into(),
             unstaked: sp.unstaked.into(),
@@ -381,16 +396,14 @@ impl MetaPool {
         };
     }
 
-    pub fn get_staking_pool_requiring_unstake(self) -> GSPRUResultJson 
-    {
+    pub fn get_staking_pool_requiring_unstake(self) -> GSPRUResultJson {
         let gspru = self.internal_get_staking_pool_requiring_unstake();
         GSPRUResultJson {
-            sp_inx: gspru.sp_inx, 
+            sp_inx: gspru.sp_inx,
             extra: gspru.extra.into(),
             count_unblocked: gspru.count_unblocked,
             count_with_stake: gspru.count_with_stake,
             total_extra: gspru.total_extra.into(),
         }
     }
-
 }

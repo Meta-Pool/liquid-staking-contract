@@ -11,7 +11,7 @@ pub use crate::utils::*;
 //--  STAKING POOL Info  --
 //-------------------------
 /// items in the Vec of staking pools
-#[derive(Default, BorshDeserialize, BorshSerialize)]
+#[derive(BorshDeserialize, BorshSerialize)]
 pub struct StakingPoolInfo {
     pub account_id: AccountId,
 
@@ -60,8 +60,8 @@ impl StakingPoolInfo {
         self.staked + self.unstaked
     }
 
-    // sometimes the core-contracts/stake-pool does not unstakes all, it leaves a few yoctos as "unstaked" 
-    // so we trust the bot to retrieve all unstaked at the start of the epoch, and in orde to know
+    // sometimes the core-contracts/stake-pool does not unstakes all, it leaves a few yoctos as "unstaked"
+    // so we trust the bot to retrieve all unstaked at the start of the epoch, and in order to know
     // if a sp can be unstaked again, we just check that the last unstake waiting period is over
     pub fn wait_period_ended(&self) -> bool {
         let epoch_height = env::epoch_height();

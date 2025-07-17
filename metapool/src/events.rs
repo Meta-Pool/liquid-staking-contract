@@ -33,7 +33,9 @@ impl<'a> NearEvent<'a> {
     fn to_json_string(&self) -> String {
         // Events cannot fail to serialize so fine to panic on error
         #[allow(clippy::redundant_closure)]
-        serde_json::to_string(self).ok().unwrap_or_else(|| env::panic(b"serde-json"))
+        serde_json::to_string(self)
+            .ok()
+            .unwrap_or_else(|| env::panic_str("serde-json"))
     }
 
     fn to_json_event_string(&self) -> String {
@@ -43,7 +45,7 @@ impl<'a> NearEvent<'a> {
     /// Logs the event to the host. This is required to ensure that the event is triggered
     /// and to consume the event.
     pub(crate) fn emit(self) {
-        env::log(self.to_json_event_string().as_bytes());
+        env::log_str(&self.to_json_event_string());
     }
 }
 
@@ -144,7 +146,10 @@ enum Nep141EventKind<'a> {
 }
 
 fn new_141<'a>(version: &'static str, event_kind: Nep141EventKind<'a>) -> NearEvent<'a> {
-    NearEvent::Nep141(Nep141Event { version, event_kind })
+    NearEvent::Nep141(Nep141Event {
+        version,
+        event_kind,
+    })
 }
 
 fn new_141_v1(event_kind: Nep141EventKind) -> NearEvent {

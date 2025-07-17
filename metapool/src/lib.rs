@@ -14,12 +14,9 @@ const SOURCE_URL: &str = "github.com/Meta-Pool/liquid-staking-contract";
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, UnorderedMap};
-use near_sdk::json_types::Base58PublicKey;
-use near_sdk::{env, ext_contract, log, near_bindgen, AccountId, PanicOnDefault, Promise};
-
-//-- Sputnik DAO remote upgrade requires BLOCKCHAIN_INTERFACE low-level access
-#[cfg(target_arch = "wasm32")]
-use near_sdk::env::BLOCKCHAIN_INTERFACE;
+use near_sdk::{
+    env, ext_contract, log, near_bindgen, AccountId, PanicOnDefault, Promise, PublicKey,
+};
 
 pub mod gas;
 pub mod types;
@@ -46,10 +43,6 @@ pub mod empty_nep_145;
 pub mod events;
 pub mod fungible_token_standard;
 
-// setup_alloc adds a #[cfg(target_arch = "wasm32")] to the global allocator, which prevents the allocator
-// from being used when the contract's main file is used in simulation testing.
-near_sdk::setup_alloc!();
-
 //self-callbacks
 #[ext_contract(ext_self_owner)]
 pub trait ExtMetaStakingPoolOwnerCallbacks {
@@ -70,8 +63,6 @@ pub trait ExtMetaStakingPoolOwnerCallbacks {
         amount_from_unstake_orders: U128String,
         amount_from_rebalance: U128String,
     ) -> bool;
-
-    fn on_get_result_from_transfer_poll(&mut self, #[callback] poll_result: PollResult) -> bool;
 
     fn on_get_sp_total_balance(&mut self, sp_inx: usize, #[callback] total_balance: U128String);
 
@@ -287,7 +278,7 @@ impl MetaPool {
             treasury_account_id,
             contract_account_balance: 0,
             web_app_url: Some(String::from(DEFAULT_WEB_APP_URL)),
-            auditor_account_id: Some(String::from(DEFAULT_AUDITOR_ACCOUNT_ID)),
+            auditor_account_id: Some(AccountId::new_unchecked(DEFAULT_AUDITOR_ACCOUNT_ID.into())),
             operator_rewards_fee_basis_points: DEFAULT_OPERATOR_REWARDS_FEE_BASIS_POINTS,
             operator_swap_cut_basis_points: DEFAULT_OPERATOR_SWAP_CUT_BASIS_POINTS,
             treasury_swap_cut_basis_points: DEFAULT_TREASURY_SWAP_CUT_BASIS_POINTS,
@@ -335,11 +326,11 @@ impl MetaPool {
     fn assert_key_accounts_are_different(&self) {
         //all accounts must be different
         assert!(self.owner_account_id != self.operator_account_id);
-        assert!(self.owner_account_id != DEVELOPERS_ACCOUNT_ID);
+        assert!(self.owner_account_id.to_string() != DEVELOPERS_ACCOUNT_ID);
         assert!(self.owner_account_id != self.treasury_account_id);
-        assert!(self.operator_account_id != DEVELOPERS_ACCOUNT_ID);
+        assert!(self.operator_account_id.to_string() != DEVELOPERS_ACCOUNT_ID);
         assert!(self.operator_account_id != self.treasury_account_id);
-        assert!(self.treasury_account_id != DEVELOPERS_ACCOUNT_ID);
+        assert!(self.treasury_account_id.to_string() != DEVELOPERS_ACCOUNT_ID);
     }
 
     //------------------------------------
@@ -360,12 +351,12 @@ impl MetaPool {
     /// Withdraws from "UNSTAKED" balance *TO MIMIC core-contracts/staking-pool* .- core-contracts/staking-pool only has "unstaked" to withdraw from
     pub fn withdraw(&mut self, amount: U128String) -> Promise {
         assert_not_lockup_account_calling();
-        self.internal_withdraw_use_unstaked(&env::predecessor_account_id(), amount.0)
+        self.internal_withdraw_use_unstaked(&env::predecessor_account_id().into(), amount.0)
     }
     /// Withdraws ALL from from "UNSTAKED" balance *TO MIMIC core-contracts/staking-pool .- core-contracts/staking-pool only has "unstaked" to withdraw from
     pub fn withdraw_all(&mut self) -> Promise {
         assert_not_lockup_account_calling();
-        let account_id = env::predecessor_account_id();
+        let account_id = env::predecessor_account_id().to_string();
         let account = self.internal_get_account(&account_id);
         self.internal_withdraw_use_unstaked(&account_id, account.unstaked)
     }
@@ -375,7 +366,7 @@ impl MetaPool {
     /// equivalent to core-contracts/staking-pool.withdraw_all, used by metastaking webapp
     pub fn withdraw_unstaked(&mut self) -> Promise {
         assert_not_lockup_account_calling();
-        let account_id = env::predecessor_account_id();
+        let account_id = env::predecessor_account_id().to_string();
         let account = self.internal_get_account(&account_id);
         self.internal_withdraw_use_unstaked(&account_id, account.unstaked)
     }
@@ -384,7 +375,7 @@ impl MetaPool {
     #[payable]
     pub fn deposit_and_stake(&mut self) -> U128String {
         assert_not_lockup_account_calling();
-        let account_id = env::predecessor_account_id();
+        let account_id = env::predecessor_account_id().to_string();
         let amount = self.internal_deposit(&account_id);
         let shares = self.internal_stake_from_account(&account_id, amount);
         //----------
@@ -392,7 +383,7 @@ impl MetaPool {
         // the amount just deposited, might be swapped in the liquid-unstake pool
         self.nslp_try_internal_clearing(amount);
         events::FtMint {
-            owner_id: &account_id,
+            owner_id: &AccountId::new_unchecked(account_id),
             amount: shares.into(),
             memo: None,
         }
@@ -418,7 +409,7 @@ impl MetaPool {
     /// The new total unstaked balance will be available for withdrawal in four epochs.
     pub fn unstake_all(&mut self) {
         assert_not_lockup_account_calling();
-        let account_id = env::predecessor_account_id();
+        let account_id = env::predecessor_account_id().to_string();
         let mut account = self.internal_get_account(&account_id);
         let all_shares = account.stake_shares;
         self.internal_unstake_shares(&account_id, &mut account, all_shares);
@@ -430,7 +421,7 @@ impl MetaPool {
     /// delayed_unstake, amount_requested is in yoctoNEARs
     pub fn unstake(&mut self, amount: U128String) {
         assert_not_lockup_account_calling();
-        self.internal_unstake(&env::predecessor_account_id(), amount.0);
+        self.internal_unstake(&env::predecessor_account_id().to_string(), amount.0);
     }
 
     /*******************/
@@ -533,7 +524,7 @@ impl MetaPool {
     }
 
     /// Returns the staking public key
-    pub fn get_staking_key(&self) -> Base58PublicKey {
+    pub fn get_staking_key(&self) -> PublicKey {
         panic!("no specific staking key for the div-pool");
     }
 
@@ -620,7 +611,7 @@ impl MetaPool {
         //assert_one_yocto();
 
         let account_id = env::predecessor_account_id();
-        let mut user_account = self.internal_get_account(&account_id);
+        let mut user_account = self.internal_get_account(&account_id.to_string());
 
         let stnear_owned = user_account.stake_shares;
 
@@ -692,12 +683,12 @@ impl MetaPool {
             .get(&self.operator_account_id)
             .unwrap_or_default();
         assert!(
-            &account_id != &DEVELOPERS_ACCOUNT_ID,
+            &account_id.to_string() != &DEVELOPERS_ACCOUNT_ID,
             "can't use developers account"
         );
         let mut developers_account = self
             .accounts
-            .get(&DEVELOPERS_ACCOUNT_ID.into())
+            .get(&AccountId::new_unchecked(DEVELOPERS_ACCOUNT_ID.into()))
             .unwrap_or_default();
 
         // The treasury cut in stnear-shares (25% by default)
@@ -731,19 +722,20 @@ impl MetaPool {
         user_account.sub_st_near(st_near_to_sell, &self);
 
         //Save involved accounts
-        self.internal_update_account(&self.treasury_account_id.clone(), &treasury_account);
-        self.internal_update_account(&self.operator_account_id.clone(), &operator_account);
+        self.internal_update_account(&self.treasury_account_id.to_string(), &treasury_account);
+        self.internal_update_account(&self.operator_account_id.to_string(), &operator_account);
         self.internal_update_account(&DEVELOPERS_ACCOUNT_ID.into(), &developers_account);
         //Save nslp accounts
         self.internal_save_nslp_account(&nslp_account);
 
         //simplified user-flow
         //direct transfer to user (instead of leaving it in-contract as "available")
-        let transfer_amount = user_account.take_from_available(&account_id, near_to_receive, self);
-        self.native_transfer(&account_id, transfer_amount);
+        let transfer_amount =
+            user_account.take_from_available(&account_id.to_string(), near_to_receive, self);
+        self.native_transfer(&account_id.to_string(), transfer_amount);
 
         //Save user account
-        self.internal_update_account(&account_id, &user_account);
+        self.internal_update_account(&account_id.to_string(), &user_account);
 
         log!(
             "@{} liquid-unstaked {} stNEAR, got {} NEAR",
@@ -770,7 +762,7 @@ impl MetaPool {
     pub fn nslp_add_liquidity(&mut self) -> u16 {
         // TODO: Since this method doesn't guard the resulting liquidity, is it possible to put it
         //    into a front-run/end-run sandwich to capitalize on the transaction?
-        let account_id = env::predecessor_account_id();
+        let account_id = env::predecessor_account_id().to_string();
         let amount = self.internal_deposit(&account_id);
         return self.internal_nslp_add_liquidity(&account_id, amount);
     }
@@ -784,7 +776,7 @@ impl MetaPool {
         self.assert_not_busy();
         //assert_one_yocto();
 
-        let account_id = env::predecessor_account_id();
+        let account_id = env::predecessor_account_id().to_string();
         let mut acc = self.internal_get_account(&account_id);
         let mut nslp_account = self.internal_get_nslp_account();
 
@@ -903,62 +895,24 @@ impl MetaPool {
     /// can be called by a remote-upgrade proposal
     ///
     #[cfg(target_arch = "wasm32")]
-    pub fn upgrade(self) {
+    pub fn upgrade(self) -> Promise {
         assert!(env::predecessor_account_id() == self.owner_account_id);
-        //input is code:<Vec<u8> on REGISTER 0
-        //log!("bytes.length {}", code.unwrap().len());
         assert!(
-            env::prepaid_gas() > 150 * TGAS,
+            env::prepaid_gas() > near_sdk::Gas(150 * TGAS),
             "set 200TGAS or more for this transaction"
         );
-        const BLOCKCHAIN_INTERFACE_NOT_SET_ERR: &str = "Blockchain interface not set.";
-        //after upgrade we call *pub fn migrate()* on the NEW CODE
-        let current_id = env::current_account_id().into_bytes();
-        let migrate_method_name = "migrate".as_bytes().to_vec();
-        unsafe {
-            BLOCKCHAIN_INTERFACE.with(|b| {
-                // Load input (new contract code) into register 0
-                b.borrow()
-                    .as_ref()
-                    .expect(BLOCKCHAIN_INTERFACE_NOT_SET_ERR)
-                    .input(0);
 
-                //prepare self-call promise
-                let promise_id = b
-                    .borrow()
-                    .as_ref()
-                    .expect(BLOCKCHAIN_INTERFACE_NOT_SET_ERR)
-                    .promise_batch_create(current_id.len() as _, current_id.as_ptr() as _);
+        // Calculate gas for migration - leave some buffer for the rest of this function
+        const GAS_FOR_THE_REST_OF_THIS_FUNCTION: near_sdk::Gas = near_sdk::Gas(10 * TGAS);
+        let gas_for_migration =
+            env::prepaid_gas() - env::used_gas() - GAS_FOR_THE_REST_OF_THIS_FUNCTION;
 
-                // 1st action, deploy/upgrade code (takes code from register 0)
-                // Note: this "promise preparation" CONSUMES an important amount of gas
-                // because at this point the WASM code is checked and "compiled"
-                // total gas cost formula is: (2 * 184765750000 + contract_size_in_bytes * (6812999 + 64572944) + 2 * 108059500000)
-                // https://github.com/Narwallets/meta-pool/issues/21
-                b.borrow()
-                    .as_ref()
-                    .expect(BLOCKCHAIN_INTERFACE_NOT_SET_ERR)
-                    .promise_batch_action_deploy_contract(promise_id, u64::MAX as _, 0);
+        // Load the new contract code from input register 0
+        let code = env::input().expect("Contract upgrade requires new code as input");
 
-                // 2nd action, schedule a call to "migrate()".
-                // Will execute on the **new code**
-                const GAS_FOR_THE_REST_OF_THIS_FUNCTION: u64 = 10 * TGAS;
-                // at this point the gas for sending the code and "compiling" is already spent. Let's compute what's left for migration
-                let gas_for_migration =
-                    env::prepaid_gas() - env::used_gas() - GAS_FOR_THE_REST_OF_THIS_FUNCTION;
-                b.borrow()
-                    .as_ref()
-                    .expect(BLOCKCHAIN_INTERFACE_NOT_SET_ERR)
-                    .promise_batch_action_function_call(
-                        promise_id,
-                        migrate_method_name.len() as _,
-                        migrate_method_name.as_ptr() as _,
-                        0 as _,
-                        0 as _,
-                        0 as _,
-                        gas_for_migration,
-                    );
-            });
-        }
+        // Deploy the new contract code and call migrate() on the new contract
+        Promise::new(env::current_account_id())
+            .deploy_contract(code)
+            .function_call("migrate".to_string(), vec![], 0, gas_for_migration)
     }
 }

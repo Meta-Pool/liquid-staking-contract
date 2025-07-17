@@ -4,7 +4,7 @@ use near_sdk::{env, PromiseResult};
 #[macro_export]
 macro_rules! event {
     ($($arg:tt)*) => ({
-        env::log(format!($($arg)*).as_bytes());
+        env::log_str(&format!($($arg)*));
     });
 }
 
@@ -33,14 +33,16 @@ pub fn assert_min_balance(amount: u128) {
 pub fn assert_one_yocto() {
     assert!(
         env::attached_deposit() == 1,
-        "the function requires 1 yocto attachment"
+        "the function requires 1 yocto attachment {} {:?}",
+        env::attached_deposit(),
+        env::prepaid_gas()
     );
 }
 
 pub fn assert_lockup_contract_calling() {
     assert!(
-        env::predecessor_account_id() == "lockup-meta-pool.near"
-            || env::predecessor_account_id() == "lockup.meta-v2.pool.testnet",
+        env::predecessor_account_id().to_string() == "lockup-meta-pool.near"
+            || env::predecessor_account_id().to_string() == "lockup.meta-v2.pool.testnet",
         "the function can only be operated by lockup-meta-pool.near"
     );
 }
@@ -53,7 +55,7 @@ pub fn is_lockup_account(account_id: &String) -> bool {
 /// assert it is not a lockup account
 pub fn assert_not_lockup_account_calling() {
     assert!(
-        !is_lockup_account(&env::predecessor_account_id()),
+        !is_lockup_account(&env::predecessor_account_id().to_string()),
         "a .lockup.near account can not be used here"
     );
 }

@@ -56,11 +56,11 @@ pub struct OldMetaPool {
     //-- ORDERS
     // this two amounts can cancel each other at end_of_epoch_clearing
     /// The total amount of "stake" orders in the current epoch, stNEAR has been minted, NEAR is in the contract, stake might be done before EOE
-    /// at at end_of_epoch_clearing, (if there were a lot of unstake in the same epoch), 
+    /// at at end_of_epoch_clearing, (if there were a lot of unstake in the same epoch),
     /// it is possible that this amount remains in hte contract as reserve_for_unstake_claim
     pub epoch_stake_orders: u128,
     /// The total amount of "delayed-unstake" orders in the current epoch, stNEAR has been burned, unstake might be done before EOE
-    /// at at end_of_epoch_clearing, (if there were also stake in the same epoch), 
+    /// at at end_of_epoch_clearing, (if there were also stake in the same epoch),
     /// it is possible that this amount remains in hte contract as reserve_for_unstake_claim
     pub epoch_unstake_orders: u128,
     /// Not used
@@ -90,7 +90,7 @@ pub struct OldMetaPool {
     /// equivalent to sum(sp.unstaked)
     pub total_unstaked_and_waiting: u128,
 
-    /// Every time a user performs a delayed-unstake, stNEAR tokens are burned and the user gets a unstaked_claim 
+    /// Every time a user performs a delayed-unstake, stNEAR tokens are burned and the user gets a unstaked_claim
     /// equal to sum(accounts.unstake). Every time a user delayed-unstakes, this amount is incremented
     /// when the funds are withdrawn to the user account, the amount is decremented.
     /// Related variables and Invariant:
@@ -165,15 +165,15 @@ pub struct OldMetaPool {
 
     /// up to 1% of the total pool can be unstaked for rebalance (no more than 1% to not affect APY)
     pub unstake_for_rebalance_cap_bp: u16, // default 100bp, meaning 1%
-    /// when some unstake for rebalance is executed, this amount is increased 
+    /// when some unstake for rebalance is executed, this amount is increased
     /// when some extra is retrieved or recovered in EOE clearing, it is decremented
-    /// represents the amount that's not staked because is in transit for rebalance. 
+    /// represents the amount that's not staked because is in transit for rebalance.
     /// it could be in unstaked_and_waiting or in the contract & epoch_stake_orders
     pub unstaked_for_rebalance: u128,
 }
 
 use crate::MetaPool;
-use crate::MetaPoolContract;
+//use crate::MetaPoolContract;
 
 #[near_bindgen]
 impl MetaPool {
@@ -193,7 +193,7 @@ impl MetaPool {
         let old: OldMetaPool = env::state_read().expect("Old state doesn't exist");
 
         // can only be called by this same contract (it's called from fn upgrade())
-        if !env::current_account_id().ends_with(".testnet") {
+        if !env::current_account_id().to_string().ends_with(".testnet") {
             assert_eq!(
                 &env::predecessor_account_id(),
                 &env::current_account_id(),
@@ -261,7 +261,7 @@ impl MetaPool {
             max_meta_rewards_lu: old.max_meta_rewards_lu,
             max_meta_rewards_lp: old.max_meta_rewards_lp,
 
-            unstaked_for_rebalance: old.unstaked_for_rebalance, 
+            unstaked_for_rebalance: old.unstaked_for_rebalance,
             unstake_for_rebalance_cap_bp: old.unstake_for_rebalance_cap_bp,
         };
     }
