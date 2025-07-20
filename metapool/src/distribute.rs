@@ -111,7 +111,8 @@ impl MetaPool {
                 //    only at the beginning of metapool before the liquidity is provided.
                 assert!(
                     env::account_balance() - MIN_BALANCE_FOR_STORAGE >= amount_to_stake,
-                    "env::account_balance()-MIN_BALANCE_FOR_STORAGE < amount_to_stake"
+                    "env::account_balance()-MIN_BALANCE_FOR_STORAGE < amount_to_stake {}",
+                    env::account_balance()
                 );
 
                 //schedule async stake or deposit_and_stake on that pool
