@@ -34,10 +34,4 @@ impl RewardMeter {
         assert!(value <= std::i128::MAX as u128);
         self.delta_staked -= value as i128;
     }
-
-    #[inline]
-    pub fn reset(&mut self, valued_shares: u128) {
-        assert!(valued_shares <= std::i128::MAX as u128);
-        self.delta_staked = valued_shares as i128; // reset meter to Zero difference
-    }
 }

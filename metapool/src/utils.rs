@@ -67,10 +67,6 @@ pub fn is_promise_success() -> bool {
 pub fn apply_pct(basis_points: u16, amount: u128) -> u128 {
     return (U256::from(basis_points) * U256::from(amount) / U256::from(10_000)).as_u128();
 }
-pub fn apply_multiplier(amount: u128, percentage: u16) -> u128 {
-    return (U256::from(amount) * U256::from(percentage as u64 * 10_u64) / U256::from(100))
-        .as_u128();
-}
 
 //-- SHARED COMPUTATIONS
 
