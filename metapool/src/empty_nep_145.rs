@@ -1,7 +1,7 @@
 use near_contract_standards::storage_management::{StorageBalance, StorageBalanceBounds};
 use near_sdk::json_types::U128;
-use near_sdk::AccountId;
-use near_sdk::{env, near_bindgen};
+use near_sdk::{assert_one_yocto, env, near_bindgen};
+use near_sdk::{require, AccountId};
 
 use crate::*;
 
@@ -37,7 +37,7 @@ impl MetaPool {
             self.accounts.insert(&account_id, &Account::default());
             STORAGE_COST_YOCTOS
         };
-        assert!(
+        require!(
             env::attached_deposit() >= required,
             "not enough attached for storage"
         );
@@ -66,7 +66,7 @@ impl MetaPool {
         if let Some(account) = self.accounts.get(&env::predecessor_account_id()) {
             // if the account exists
             // check that it has no balances
-            assert!(
+            require!(
                 account.can_be_closed(),
                 "cannot close account with balance in stNEAR or LP-NEAR-stNEAR"
             );

@@ -26,6 +26,8 @@ pub const FIVE_NEAR: u128 = 5 * NEAR;
 pub const TEN_NEAR: u128 = 10 * NEAR;
 pub const K_NEAR: u128 = 1_000 * NEAR;
 
+pub const BP_100_PERCENT: u16 = 10_000; // basis points for 100%
+
 ///if there's less than MIN_MOVEMENT NEAR to stake/unstake, wait until there's more to justify the call & tx-fees
 pub const MIN_MOVEMENT_AMOUNT: u128 = ONE_NEAR;
 

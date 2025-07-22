@@ -1,5 +1,5 @@
 use crate::*;
-use near_sdk::{near_bindgen, serde::Serialize};
+use near_sdk::{near_bindgen, require, serde::Serialize};
 
 #[derive(Serialize)]
 #[serde(crate = "near_sdk::serde")]
@@ -18,14 +18,14 @@ impl MetaPool {
     /// Owner's method.
     /// Pauses pool staking.
     pub fn pause_staking(&mut self) {
-        self.assert_operator_or_owner();
-        assert!(!self.staking_paused, "The staking is already paused");
+        self.require_operator_or_owner();
+        require!(!self.staking_paused, "The staking is already paused");
         self.staking_paused = true;
     }
     /// unPauses pool staking.
     pub fn un_pause_staking(&mut self) {
-        self.assert_operator_or_owner();
-        assert!(self.staking_paused, "The staking is not paused");
+        self.require_operator_or_owner();
+        require!(self.staking_paused, "The staking is not paused");
         self.staking_paused = false;
     }
 
@@ -56,7 +56,7 @@ impl MetaPool {
 
     ///remove staking pool from list *if it's empty*
     pub fn remove_staking_pool(&mut self, inx: u16) {
-        self.assert_operator_or_owner();
+        self.require_operator_or_owner();
 
         let sp = &self.staking_pools[inx as usize];
         if !sp.is_empty() {
@@ -68,17 +68,16 @@ impl MetaPool {
     /// add a new staking pool, checking that it is not already in the list
     /// added with weight_basis_points = 0, to preserve sum(weights)=100%
     pub fn add_staking_pool(&mut self, account_id: AccountId) {
-        self.assert_operator_or_owner();
-        assert!(
+        self.require_operator_or_owner();
+        require!(
             account_id.to_string().ends_with(".poolv1.near")
                 || account_id.to_string().ends_with(".pool.near")
                 || account_id.to_string().ends_with(".pool.f863973.m0")
                 || account_id.to_string().ends_with(".testnet"),
-            "invalid staking-pool contract account {}",
-            account_id
+            "invalid staking-pool contract account_id"
         );
         // assert that is not already in the list
-        assert!(
+        require!(
             self.staking_pools
                 .iter()
                 .find(|x| x.account_id == account_id)
@@ -95,7 +94,7 @@ impl MetaPool {
     #[payable]
     pub fn set_staking_pools(&mut self, list: Vec<StakingPoolArgItem>) {
         assert_one_yocto();
-        self.assert_operator_or_owner();
+        self.require_operator_or_owner();
         // make sure no additions or removals
         assert_eq!(list.len(), self.staking_pools.len());
         // process the list
@@ -109,14 +108,13 @@ impl MetaPool {
             // get weight_basis_points to set
             let bp = list[sp_inx].weight_basis_points;
             // no staking pool can have 50% or more
-            assert!(bp < 5000);
+            require!(bp < 5000, "staking pool weight >= 50%");
             // if there's a change
             if self.staking_pools[sp_inx].weight_basis_points != bp {
                 // check pool is not busy
-                assert!(
+                require!(
                     !self.staking_pools[sp_inx].busy_lock,
-                    "sp {} is busy",
-                    sp_inx
+                    format!("sp {} is busy", sp_inx)
                 );
                 // set new value
                 self.staking_pools[sp_inx].weight_basis_points = bp;
@@ -124,7 +122,7 @@ impl MetaPool {
             // keep totals
             total_weight += bp;
         }
-        assert_eq!(total_weight, 10000);
+        require!(total_weight == BP_100_PERCENT, "sum(weight) must be 100%");
     }
 
     //--------------------------------------------------
@@ -141,26 +139,26 @@ impl MetaPool {
         return self.operator_account_id.clone();
     }
     pub fn set_operator_account_id(&mut self, account_id: AccountId) {
-        assert!(env::is_valid_account_id(account_id.as_bytes()));
-        self.assert_owner_calling();
+        require!(env::is_valid_account_id(account_id.as_bytes()));
+        self.require_owner_calling();
         self.operator_account_id = account_id;
         //all key accounts must be different
-        self.assert_key_accounts_are_different();
+        self.require_key_accounts_are_different();
     }
     pub fn get_treasury_account_id(&self) -> AccountId {
         return self.treasury_account_id.clone();
     }
     pub fn set_treasury_account_id(&mut self, account_id: AccountId) {
-        assert!(env::is_valid_account_id(account_id.as_bytes()));
-        self.assert_owner_calling();
+        require!(env::is_valid_account_id(account_id.as_bytes()));
+        self.require_owner_calling();
         self.treasury_account_id = account_id;
-        self.assert_key_accounts_are_different();
+        self.require_key_accounts_are_different();
     }
     pub fn set_owner_id(&mut self, owner_id: AccountId) {
-        assert!(env::is_valid_account_id(owner_id.as_bytes()));
-        self.assert_owner_calling();
+        require!(env::is_valid_account_id(owner_id.as_bytes()));
+        self.require_owner_calling();
         self.owner_account_id = owner_id.into();
-        self.assert_key_accounts_are_different();
+        self.require_key_accounts_are_different();
     }
 
     /// The amount of tokens that were deposited to the staking pool.
@@ -186,7 +184,11 @@ impl MetaPool {
         if acc.nslp_shares != 0 {
             let nslp_account = self.internal_get_nslp_account();
             nslp_share_value = acc.valued_nslp_shares(self, &nslp_account); //in NEAR
-            nslp_share_bp = proportional(10_000, acc.nslp_shares, nslp_account.nslp_shares) as u16;
+            nslp_share_bp = proportional(
+                BP_100_PERCENT as u128,
+                acc.nslp_shares,
+                nslp_account.nslp_shares,
+            ) as u16;
         }
         return GetAccountInfoResult {
             account_id,
@@ -250,7 +252,7 @@ impl MetaPool {
     /// sets configurable contract info [NEP-129](https://github.com/nearprotocol/NEPs/pull/129)
     // Note: params are not Option<String> so the user can not inadvertently set null to data by not including the argument
     pub fn set_contract_info(&mut self, web_app_url: String, auditor_account_id: String) {
-        self.assert_owner_calling();
+        self.require_owner_calling();
         self.web_app_url = if web_app_url.len() > 0 {
             Some(web_app_url)
         } else {
@@ -334,8 +336,11 @@ impl MetaPool {
 
     /// Sets contract parameters
     pub fn set_contract_params(&mut self, params: ContractParamsJSON) {
-        self.assert_operator_or_owner();
-        assert!(params.nslp_max_discount_basis_points > params.nslp_min_discount_basis_points);
+        self.require_operator_or_owner();
+        require!(
+            params.nslp_max_discount_basis_points > params.nslp_min_discount_basis_points,
+            "max<=min discount basis points"
+        );
 
         self.nslp_liquidity_target = params.nslp_liquidity_target.0;
         self.nslp_max_discount_basis_points = params.nslp_max_discount_basis_points;
@@ -353,7 +358,10 @@ impl MetaPool {
         self.treasury_swap_cut_basis_points = params.treasury_swap_cut_basis_points;
 
         self.min_deposit_amount = params.min_deposit_amount.0;
-        assert!(params.unstake_for_rebalance_cap_bp < 2000); // hard coded limit, no more than 20%
+        require!(
+            params.unstake_for_rebalance_cap_bp < 2000,
+            "unstake_for_rebalance_cap_bp max is 20%"
+        );
         self.unstake_for_rebalance_cap_bp = params.unstake_for_rebalance_cap_bp;
     }
 
@@ -364,7 +372,7 @@ impl MetaPool {
         lp_pct: u16,
         liquid_unstake_pct: u16,
     ) {
-        self.assert_operator_or_owner();
+        self.require_operator_or_owner();
         self.staker_meta_mult_pct = stakers_pct;
         self.stnear_sell_meta_mult_pct = liquid_unstake_pct;
         self.lp_provider_meta_mult_pct = lp_pct;
@@ -372,7 +380,7 @@ impl MetaPool {
 
     /// Sets contract parameters
     pub fn set_max_meta_rewards(&mut self, stakers: u32, lu: u32, lp: u32) {
-        self.assert_operator_or_owner();
+        self.require_operator_or_owner();
         self.max_meta_rewards_stakers = stakers as u128 * ONE_NEAR; //stakers
         self.max_meta_rewards_lu = lu as u128 * ONE_NEAR; //liquid-unstakers
         self.max_meta_rewards_lp = lp as u128 * ONE_NEAR; //liquidity-providers
@@ -381,7 +389,7 @@ impl MetaPool {
     /// get sp (staking-pool) info
     /// Returns JSON representation of sp recorded state
     pub fn get_sp_info(&self, inx: u16) -> StakingPoolJSONInfo {
-        assert!((inx as usize) < self.staking_pools.len());
+        require!((inx as usize) < self.staking_pools.len(), "invalid index");
         let sp = &self.staking_pools[inx as usize];
 
         return StakingPoolJSONInfo {

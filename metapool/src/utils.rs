@@ -1,5 +1,5 @@
 pub use crate::types::*;
-use near_sdk::{env, AccountId, PromiseResult};
+use near_sdk::{env, require, AccountId};
 
 #[macro_export]
 macro_rules! event {
@@ -9,29 +9,13 @@ macro_rules! event {
 }
 
 #[macro_export]
-#[cfg(feature = "debug_log")]
-macro_rules! debug_log {
-    ($($arg:tt)*) => ({
-        env::log(format!($($arg)*).as_bytes());
-    });
-}
-#[macro_export]
 #[cfg(not(feature = "debug_log"))]
 macro_rules! debug_log {
     ($($arg:tt)*) => {{}};
 }
 
-pub fn assert_one_yocto() {
-    assert!(
-        env::attached_deposit() == 1,
-        "the function requires 1 yocto attachment {} {:?}",
-        env::attached_deposit(),
-        env::prepaid_gas()
-    );
-}
-
-pub fn assert_lockup_contract_calling() {
-    assert!(
+pub fn require_lockup_contract_calling() {
+    require!(
         env::predecessor_account_id().to_string() == "lockup-meta-pool.near"
             || env::predecessor_account_id().to_string() == "lockup.meta-v2.pool.testnet",
         "the function can only be operated by lockup-meta-pool.near"
@@ -45,27 +29,15 @@ pub fn is_lockup_account(account_id: &AccountId) -> bool {
 }
 
 /// assert it is not a lockup account
-pub fn assert_not_lockup_account_calling() {
-    assert!(
+pub fn require_not_lockup_account_calling() {
+    require!(
         !is_lockup_account(&env::predecessor_account_id()),
         "a .lockup.near account can not be used here"
     );
 }
 
-pub fn is_promise_success() -> bool {
-    assert_eq!(
-        env::promise_results_count(),
-        1,
-        "Contract expected a result on the callback"
-    );
-    match env::promise_result(0) {
-        PromiseResult::Successful(_) => true,
-        _ => false,
-    }
-}
-
 pub fn apply_pct(basis_points: u16, amount: u128) -> u128 {
-    return (U256::from(basis_points) * U256::from(amount) / U256::from(10_000)).as_u128();
+    return (U256::from(basis_points) * U256::from(amount) / U256::from(BP_100_PERCENT)).as_u128();
 }
 
 //-- SHARED COMPUTATIONS

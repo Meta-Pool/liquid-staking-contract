@@ -4,8 +4,8 @@ use near_contract_standards::fungible_token::{
     resolver::FungibleTokenResolver,
 };
 
-use near_sdk::collections::LazyOption;
 use near_sdk::json_types::U128;
+use near_sdk::{assert_one_yocto, collections::LazyOption, require};
 use near_sdk::{env, near_bindgen, AccountId, Gas, PromiseOrValue};
 
 use crate::*;
@@ -87,10 +87,12 @@ impl FungibleTokenCore for MetaPool {
         msg: String,
     ) -> PromiseOrValue<U128> {
         assert_one_yocto();
-        assert!(
+        require!(
             env::prepaid_gas() > GAS_FOR_FT_TRANSFER_CALL + GAS_FOR_RESOLVE_TRANSFER + FIVE_TGAS,
-            "gas required {:?}",
-            GAS_FOR_FT_TRANSFER_CALL + GAS_FOR_RESOLVE_TRANSFER + FIVE_TGAS
+            format!(
+                "gas required {:?}",
+                GAS_FOR_FT_TRANSFER_CALL + GAS_FOR_RESOLVE_TRANSFER + FIVE_TGAS
+            )
         );
 
         self.internal_st_near_transfer(
@@ -166,7 +168,7 @@ impl FungibleTokenMetadataProvider for MetaPool {
 #[near_bindgen]
 impl MetaPool {
     pub fn ft_metadata_set(&self, data: FungibleTokenMetadata) {
-        self.assert_owner_calling();
+        self.require_owner_calling();
         let mut metadata = ft_metadata_init_lazy_container();
         metadata.set(&data); //save into storage
     }

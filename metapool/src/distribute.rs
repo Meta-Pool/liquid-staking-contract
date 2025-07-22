@@ -1,5 +1,5 @@
 use crate::*;
-use near_sdk::{log, near_bindgen, Gas, Promise};
+use near_sdk::{assert_one_yocto, is_promise_success, log, near_bindgen, require, Gas, Promise};
 
 #[near_bindgen]
 impl MetaPool {
@@ -18,7 +18,7 @@ impl MetaPool {
         //Note: In order to make this contract independent from the operator
         //this fn is open to be called by anyone
 
-        self.assert_not_busy();
+        self.require_not_busy();
 
         //do we need to stake?
         if self.total_for_staking <= self.total_actually_staked {
@@ -109,10 +109,9 @@ impl MetaPool {
                 // NOTE: This contract holds also the liquidity pool for fast unstake, so it has normally more than enough
                 //    balance to backup storage. Anyhow we setup a minimum balance of 35N.
                 //    This can only happen at the beginning of metapool before the liquidity is provided.
-                assert!(
+                require!(
                     env::account_balance() - MIN_BALANCE_FOR_STORAGE >= amount_to_stake,
-                    "env::account_balance()-MIN_BALANCE_FOR_STORAGE < amount_to_stake {}",
-                    env::account_balance()
+                    "env::account_balance()-MIN_BALANCE_FOR_STORAGE < amount_to_stake"
                 );
 
                 //schedule async stake or deposit_and_stake on that pool
@@ -200,25 +199,28 @@ impl MetaPool {
     // Note: this fn stakes from current epochs_stake_orders,
     // consider that the scheduled promise-to-stake/restake can fail
     pub fn manual_stake(&mut self, inx: u16, amount: U128String) {
-        self.assert_operator_or_owner();
-        self.assert_not_busy();
+        self.require_operator_or_owner();
+        self.require_not_busy();
 
-        assert!(
+        require!(
             self.epoch_stake_orders > MIN_MOVEMENT_AMOUNT,
-            "self.epoch_stake_orders too low {}",
-            self.epoch_stake_orders
+            format!(
+                "self.epoch_stake_orders too low {}",
+                self.epoch_stake_orders
+            )
         );
-        assert!(
+        require!(
             amount.0 <= self.epoch_stake_orders,
-            "self.epoch_stake_orders is {} you cant manual stake {}",
-            self.epoch_stake_orders,
-            amount.0
+            format!(
+                "self.epoch_stake_orders is {} you cant manual stake {}",
+                self.epoch_stake_orders, amount.0
+            )
         );
 
         let sp_inx = inx as usize;
-        assert!(sp_inx < self.staking_pools.len(), "invalid index");
+        require!(sp_inx < self.staking_pools.len(), "invalid index");
         let sp = &self.staking_pools[sp_inx];
-        assert!(!sp.busy_lock, "sp busy");
+        require!(!sp.busy_lock, "sp busy");
         // schedule promise to direct stake
         self.launch_direct_stake(sp_inx, amount.0);
         // Note: if the pool has some sizable unstake pending, the fn will re-stake the unstaked-and-waiting-amount
@@ -237,7 +239,7 @@ impl MetaPool {
     /// the stake of the sp is adjusted limited by extra and max-rebalance-unstake
     pub fn rebalance_unstake_sp(&mut self, inx: u16) {
         let max_unstake_for_rebalance = self.max_unstake_for_rebalance();
-        assert!(
+        require!(
             self.unstaked_for_rebalance + MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT
                 < max_unstake_for_rebalance,
             "max unstake for rebalance already reached"
@@ -248,27 +250,28 @@ impl MetaPool {
 
     // internal common process for the prev 2 pub fns
     fn perform_rebalance(&mut self, inx: u16, cap: u128) {
-        self.assert_operator_or_owner();
-        self.assert_not_busy();
+        self.require_operator_or_owner();
+        self.require_not_busy();
         let sp_inx = inx as usize;
-        assert!(sp_inx < self.staking_pools.len(), "invalid index");
+        require!(sp_inx < self.staking_pools.len(), "invalid index");
         let sp = &self.staking_pools[sp_inx];
-        assert!(!sp.busy_lock, "sp busy");
+        require!(!sp.busy_lock, "sp busy");
         // can not unstake while unstake pending (if it was done on previous epochs)
         // because it will extend the waiting period
-        assert!(
+        require!(
             sp.unstaked == 0 || sp.unstk_req_epoch_height == env::epoch_height(),
-            "can not force rebalance-unstake while unstake pending. sp.unstake={}, sp.unstk_req_epoch_height={}, env::epoch_height()={}",
-            sp.unstaked, sp.unstk_req_epoch_height, env::epoch_height()
+            format!("can not force rebalance-unstake while unstake pending. sp.unstake={}, sp.unstk_req_epoch_height={}, env::epoch_height()={}",
+            sp.unstaked, sp.unstk_req_epoch_height, env::epoch_height())
         );
         // limit for rebalance_unstaking is the should_have of the pool
         let should_have = apply_pct(sp.weight_basis_points, self.total_for_staking);
         // if staked, (unstaked in this epoch or unstaked==0) and extra
-        assert!(
+        require!(
             sp.staked > should_have,
-            "the sp has not extra stake. assigned weight_bp:{}, stake:{}",
-            sp.weight_basis_points,
-            sp.staked
+            format!(
+                "the sp has not extra stake. assigned weight_bp:{}, stake:{}",
+                sp.weight_basis_points, sp.staked
+            )
         );
         // has extra, can be unstaked, start rebalance
         let extra = sp.staked - should_have;
@@ -292,7 +295,7 @@ impl MetaPool {
     /// Note: It could happen that some users perform delayed-unstake during those epochs, that amount will be preserved in the contract,...
     /// ... because total_unstake_claims has priority over rebalance.
     pub fn do_rebalance_unstake(&mut self) -> bool {
-        self.assert_operator_or_owner();
+        self.require_operator_or_owner();
 
         // check for max x% unstaked
         let max_unstake_for_rebalance = self.max_unstake_for_rebalance();
@@ -341,7 +344,7 @@ impl MetaPool {
         //Note: In order to make this contract independent from the operator
         //this fn is open to be called by anyone
 
-        self.assert_not_busy();
+        self.require_not_busy();
         // clearing first
         self.internal_end_of_epoch_clearing();
         // after clearing, epoch_unstake_orders is the amount to unstake
@@ -413,17 +416,15 @@ impl MetaPool {
         if total_amount == 0 {
             return;
         }
-        self.assert_not_busy();
+        self.require_not_busy();
 
         assert!(self.total_actually_staked >= total_amount, "IUN");
-        assert!(sp_inx < self.staking_pools.len(), "invalid index");
+        require!(sp_inx < self.staking_pools.len(), "invalid index");
         let sp = &mut self.staking_pools[sp_inx];
-        assert!(!sp.busy_lock, "sp is busy");
-        assert!(
+        require!(!sp.busy_lock, "sp is busy");
+        require!(
             sp.staked >= total_amount,
-            "only {} staked can not unstake {}",
-            sp.staked,
-            total_amount,
+            format!("only {} staked can not unstake {}", sp.staked, total_amount)
         );
 
         self.contract_busy = true;
@@ -499,29 +500,23 @@ impl MetaPool {
     #[payable]
     pub fn set_busy(&mut self, value: bool) {
         assert_one_yocto();
-        self.assert_operator_or_owner();
-        assert!(
-            self.contract_busy != value,
-            "contract_busy is already {}",
-            value
-        );
+        self.require_operator_or_owner();
+        require!(self.contract_busy != value, "contract_is already busy",);
         self.contract_busy = value;
     }
     //operator manual set sp.busy_lock
     #[payable]
     pub fn sp_busy(&mut self, sp_inx: u16, value: bool) {
         assert_one_yocto();
-        self.assert_operator_or_owner();
+        self.require_operator_or_owner();
 
         let inx = sp_inx as usize;
-        assert!(inx < self.staking_pools.len());
+        require!(inx < self.staking_pools.len());
 
         let sp = &mut self.staking_pools[inx];
-        assert!(
+        require!(
             sp.busy_lock != value,
-            "sp[{}].busy_lock is already {}",
-            inx,
-            value
+            format!("sp[{}].busy_lock is already {}", inx, value)
         );
         sp.busy_lock = value;
     }
@@ -557,11 +552,11 @@ impl MetaPool {
         //    is called at the moment when the pool or the contract is locked, the result is ignored.
 
         let inx = sp_inx as usize;
-        assert!(inx < self.staking_pools.len());
+        require!(inx < self.staking_pools.len());
 
-        self.assert_not_busy();
+        self.require_not_busy();
         let sp = &mut self.staking_pools[inx];
-        assert!(!sp.busy_lock, "sp is busy");
+        require!(!sp.busy_lock, "sp is busy");
 
         // SUGGESTION: Maybe better to call `get_account` to get information about `staked` and
         //    `unstaked` balance at the same time. Sometimes the staking pool may throw yoctoNEAR
@@ -642,13 +637,13 @@ impl MetaPool {
         //this fn is open to be called by anyone
         //self.assert_operator_or_owner();
 
-        self.assert_not_busy();
+        self.require_not_busy();
 
         let inx = sp_inx as usize;
-        assert!(inx < self.staking_pools.len());
+        require!(inx < self.staking_pools.len());
 
         let sp = &mut self.staking_pools[inx];
-        assert!(!sp.busy_lock, "sp is busy");
+        require!(!sp.busy_lock, "sp is busy");
 
         let epoch_height = env::epoch_height();
 
@@ -827,13 +822,13 @@ impl MetaPool {
         //Note: In order to make fund-recovering independent from the operator
         //this fn is open to be called by anyone
 
-        assert!(inx < self.staking_pools.len() as u16, "invalid index");
+        require!(inx < self.staking_pools.len() as u16, "invalid index");
 
-        self.assert_not_busy();
+        self.require_not_busy();
 
         let sp = &mut self.staking_pools[inx as usize];
-        assert!(!sp.busy_lock, "sp is busy");
-        assert!(sp.unstaked > 0, "sp unstaked == 0");
+        require!(!sp.busy_lock, "sp is busy");
+        require!(sp.unstaked > 0, "sp unstaked == 0");
         if !sp.wait_period_ended() {
             panic!(
                 "unstaking-delay ends at {}, now is {}",

@@ -1,6 +1,7 @@
 pub use crate::types::*;
 pub use crate::utils::*;
 use crate::{empty_nep_145::STORAGE_COST_YOCTOS, *};
+use near_sdk::require;
 use near_sdk::{json_types::U128, log, AccountId, Balance, Promise, PromiseResult};
 
 const UNSTAKED_YOCTOS_TO_IGNORE: u128 = 100;
@@ -18,35 +19,33 @@ pub struct GSPRUResult {
 /****************************/
 impl MetaPool {
     /// Asserts that the method was called by the owner.
-    pub fn assert_owner_calling(&self) {
-        assert_eq!(
-            &env::predecessor_account_id(),
-            &self.owner_account_id,
+    pub fn require_owner_calling(&self) {
+        require!(
+            &env::predecessor_account_id() == &self.owner_account_id,
             "Can only be called by the owner"
         )
     }
-    pub fn assert_operator_or_owner(&self) {
-        assert!(
+    pub fn require_operator_or_owner(&self) {
+        require!(
             &env::predecessor_account_id() == &self.owner_account_id
                 || &env::predecessor_account_id() == &self.operator_account_id,
             "Can only be called by the operator or the owner"
         );
     }
 
-    pub fn assert_not_busy(&self) {
-        assert!(!self.contract_busy, "Contract is busy. Try again later");
+    pub fn require_not_busy(&self) {
+        require!(!self.contract_busy, "Contract is busy. Try again later");
     }
 
-    pub fn assert_min_deposit_amount(&self, amount: u128) {
-        assert!(
+    pub fn require_min_deposit_amount(&self, amount: u128) {
+        require!(
             amount >= self.min_deposit_amount,
-            "minimum deposit amount is {}",
-            self.min_deposit_amount
+            format!("minimum deposit amount is {}", self.min_deposit_amount)
         );
     }
 
-    pub fn assert_not_staking_paused(&self) {
-        assert!(!self.is_staking_paused(), "Staking is paused");
+    pub fn require_not_paused(&self) {
+        require!(!self.is_staking_paused(), "Staking is paused");
     }
 }
 
@@ -55,8 +54,8 @@ impl MetaPool {
 /***************************************/
 impl MetaPool {
     pub(crate) fn internal_deposit(&mut self, account_id: &AccountId) -> u128 {
-        self.assert_min_deposit_amount(env::attached_deposit());
-        self.assert_not_staking_paused();
+        self.require_min_deposit_amount(env::attached_deposit());
+        self.require_not_paused();
         self.internal_deposit_attached_near_into(account_id)
     }
 
@@ -71,7 +70,7 @@ impl MetaPool {
                 "new account, {} yoctos used for storage_deposit",
                 STORAGE_COST_YOCTOS
             );
-            assert!(
+            require!(
                 env::attached_deposit() > STORAGE_COST_YOCTOS,
                 "deposit too low"
             );
@@ -139,12 +138,11 @@ impl MetaPool {
         account_id: &AccountId,
         near_amount: Balance,
     ) -> (u128, u128) {
-        self.assert_not_busy();
+        self.require_not_busy();
 
-        assert!(
+        require!(
             near_amount >= self.min_deposit_amount.saturating_sub(STORAGE_COST_YOCTOS),
-            "min deposit amount is {}",
-            self.min_deposit_amount
+            format!("min deposit amount is {}", self.min_deposit_amount)
         );
 
         let mut acc = self.internal_get_account(account_id);
@@ -179,7 +177,7 @@ impl MetaPool {
     //------------------------------
     /// delayed_unstake, amount_requested is in yoctoNEARs
     pub(crate) fn internal_unstake(&mut self, account_id: &AccountId, amount_requested: u128) {
-        self.assert_not_busy();
+        self.require_not_busy();
 
         let mut acc = self.internal_get_account(account_id);
 
@@ -205,7 +203,7 @@ impl MetaPool {
         acc: &mut Account,
         stake_shares_to_burn: u128,
     ) -> (u128, u64) {
-        self.assert_not_busy();
+        self.require_not_busy();
         assert!(stake_shares_to_burn > 0 && stake_shares_to_burn <= acc.stake_shares);
         //remove acc stake shares
         let amount_to_unstake = self.amount_from_stake_shares(stake_shares_to_burn);
@@ -257,7 +255,7 @@ impl MetaPool {
         account_id: &AccountId,
         amount_requested: u128,
     ) -> u16 {
-        self.assert_not_busy();
+        self.require_not_busy();
 
         let mut acc = self.internal_get_account(account_id);
 
@@ -282,7 +280,11 @@ impl MetaPool {
         nslp_account.nslp_shares += num_shares; //total nslp shares
 
         //compute the % the user now owns of the Liquidity Pool (in basis points)
-        let result_bp = proportional(10_000, acc.nslp_shares, nslp_account.nslp_shares) as u16;
+        let result_bp = proportional(
+            BP_100_PERCENT as u128,
+            acc.nslp_shares,
+            nslp_account.nslp_shares,
+        ) as u16;
 
         //--SAVE ACCOUNTS
         self.internal_update_account(account_id, &acc);
@@ -448,7 +450,10 @@ impl MetaPool {
         //here 0<near_after<self.nslp_liquidity_target, so 0<proportional_bp<range
         let proportional_bp = proportional(range as u128, near_after, self.nslp_liquidity_target);
 
-        return self.nslp_max_discount_basis_points - proportional_bp as u16;
+        let swap_fee_basis_points = self.nslp_max_discount_basis_points - proportional_bp as u16;
+        assert!(swap_fee_basis_points < BP_100_PERCENT, "inconsistency d>1");
+
+        swap_fee_basis_points
     }
 
     /// NEAR/stNEAR SWAP functions
@@ -462,7 +467,6 @@ impl MetaPool {
         let nears_out = self.amount_from_stake_shares(st_near_to_sell);
         let swap_fee_basis_points =
             self.internal_get_discount_basis_points(available_near, nears_out);
-        assert!(swap_fee_basis_points < 10000, "inconsistency d>1");
         let fee = apply_pct(swap_fee_basis_points, nears_out);
         return (nears_out - fee).into(); //when stNEAR is sold user pays a swap fee (the user skips the waiting period)
 
@@ -609,14 +613,15 @@ impl MetaPool {
             sender_id, receiver_id,
             "Sender and receiver should be different"
         );
-        assert!(amount > 0, "The amount should be a positive number");
+        require!(amount > 0, "The amount should be a positive number");
         let mut sender_acc = self.internal_get_account(sender_id);
         let mut receiver_acc = self.internal_get_account(receiver_id);
-        assert!(
+        require!(
             amount <= sender_acc.stake_shares,
-            "@{} not enough stNEAR balance {}",
-            sender_id,
-            sender_acc.stake_shares
+            format!(
+                "@{} not enough stNEAR balance {}",
+                sender_id, sender_acc.stake_shares
+            )
         );
 
         let near_amount = self.amount_from_stake_shares(amount); //amount is in stNEAR(aka shares), let's compute how many nears that is - for acc.staking_meter
@@ -705,7 +710,7 @@ impl MetaPool {
     // e.g. stake-orders: 500, unstake-orders:500 => net: 0 so keep 500 to fulfill unstake claims after 4 epochs.
     //
     pub(crate) fn internal_end_of_epoch_clearing(&mut self) {
-        self.assert_not_busy();
+        self.require_not_busy();
         // This method is called before any actual staking/unstaking.
 
         // if any one of the two is zero, we've a pure stake or pure unstake epoch, no clearing

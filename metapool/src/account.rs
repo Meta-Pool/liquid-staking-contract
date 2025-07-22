@@ -1,8 +1,7 @@
 use crate::*;
-use near_sdk::log;
+use near_sdk::{log, require};
 
-pub use crate::types::*;
-pub use crate::utils::*;
+pub use crate::{types::*, utils::*};
 
 // -----------------
 // User Account Data
@@ -86,13 +85,9 @@ impl Default for Account {
     }
 }
 impl Account {
-
     /// if the account can be closed and storage deposit returned
     pub fn can_be_closed(&self) -> bool {
-        self.available == 0
-        && self.unstaked == 0
-        && self.stake_shares == 0
-        && self.nslp_shares == 0
+        self.available == 0 && self.unstaked == 0 && self.stake_shares == 0 && self.nslp_shares == 0
     }
 
     #[inline]
@@ -152,25 +147,26 @@ impl Account {
         amount: u128,
         main: &mut MetaPool,
     ) -> u128 {
-        assert!(
+        require!(
             amount <= self.unstaked,
-            "Not enough unstaked balance {}",
-            self.unstaked
+            format!("Not enough unstaked balance {}", self.unstaked)
         );
 
         let epoch = env::epoch_height();
-        assert!( epoch >= self.unstaked_requested_unlock_epoch,
-            "The unstaked balance is not yet available due to unstaking delay. You need to wait at least {} epochs"
-            , self.unstaked_requested_unlock_epoch - epoch);
+        require!(epoch >= self.unstaked_requested_unlock_epoch,
+            format!("The unstaked balance is not yet available due to unstaking delay. You need to wait at least {} epochs",
+            self.unstaked_requested_unlock_epoch - epoch));
 
         // in the account, moves from unstaked to available
         self.unstaked -= amount; //Zeroes, claimed
         self.available += amount;
         //check the heart beat has really moved the funds
-        assert!(
+        require!(
             main.retrieved_for_unstake_claims >= amount,
-            "Funds are not yet available due to unstaking delay. Epoch:{}",
-            env::epoch_height()
+            format!(
+                "Funds are not yet available due to unstaking delay. Epoch:{}",
+                env::epoch_height()
+            )
         );
         // in the contract, move from reserve_for_unstaked_claims to total_available
         main.retrieved_for_unstake_claims -= amount;
@@ -208,10 +204,12 @@ impl Account {
             self.available
         };
 
-        assert!(
+        require!(
             self.available >= to_withdraw,
-            "Not enough available balance {} for the requested amount",
-            self.available
+            format!(
+                "Not enough available balance {} for the requested amount",
+                self.available
+            )
         );
         self.available -= to_withdraw;
 

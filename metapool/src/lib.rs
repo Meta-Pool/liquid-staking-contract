@@ -14,7 +14,10 @@ const SOURCE_URL: &str = "github.com/Meta-Pool/liquid-staking-contract";
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, UnorderedMap};
-use near_sdk::{env, ext_contract, log, near_bindgen, AccountId, PanicOnDefault, Promise};
+use near_sdk::{
+    assert_one_yocto, env, ext_contract, log, near_bindgen, require, AccountId, PanicOnDefault,
+    Promise,
+};
 
 pub mod gas;
 pub mod types;
@@ -318,18 +321,18 @@ impl MetaPool {
             unstake_for_rebalance_cap_bp: 100,
         };
         //all key accounts must be different
-        result.assert_key_accounts_are_different();
+        result.require_key_accounts_are_different();
         return result;
     }
 
-    fn assert_key_accounts_are_different(&self) {
+    fn require_key_accounts_are_different(&self) {
         //all accounts must be different
-        assert!(self.owner_account_id != self.operator_account_id);
-        assert!(self.owner_account_id.to_string() != DEVELOPERS_ACCOUNT_ID);
-        assert!(self.owner_account_id != self.treasury_account_id);
-        assert!(self.operator_account_id.to_string() != DEVELOPERS_ACCOUNT_ID);
-        assert!(self.operator_account_id != self.treasury_account_id);
-        assert!(self.treasury_account_id.to_string() != DEVELOPERS_ACCOUNT_ID);
+        require!(self.owner_account_id != self.operator_account_id);
+        require!(self.owner_account_id.to_string() != DEVELOPERS_ACCOUNT_ID);
+        require!(self.owner_account_id != self.treasury_account_id);
+        require!(self.operator_account_id.to_string() != DEVELOPERS_ACCOUNT_ID);
+        require!(self.operator_account_id != self.treasury_account_id);
+        require!(self.treasury_account_id.to_string() != DEVELOPERS_ACCOUNT_ID);
     }
 
     //------------------------------------
@@ -342,34 +345,29 @@ impl MetaPool {
     /// Deposits the attached amount into the inner account of the predecessor.
     // Note: pub fn deposit(&mut self)  is not implemented, use fn deposit_and_stake
 
-    /// Withdraws from "UNSTAKED" balance *TO MIMIC core-contracts/staking-pool* .- core-contracts/staking-pool only has "unstaked" to withdraw from
+    /// Withdraws a specific amount from "UNSTAKED" balance *TO MIMIC core-contracts/staking-pool*
     pub fn withdraw(&mut self, amount: U128String) -> Promise {
-        assert_not_lockup_account_calling();
+        require_not_lockup_account_calling();
         let account_id = env::predecessor_account_id();
         self.internal_withdraw_use_unstaked(&account_id, amount.0)
     }
-    /// Withdraws ALL from from "UNSTAKED" balance *TO MIMIC core-contracts/staking-pool .- core-contracts/staking-pool only has "unstaked" to withdraw from
+    /// Withdraws ALL from from "UNSTAKED" balance *TO MIMIC core-contracts/staking-pool
     pub fn withdraw_all(&mut self) -> Promise {
-        assert_not_lockup_account_calling();
+        require_not_lockup_account_calling();
         let account_id = env::predecessor_account_id();
         let account = self.internal_get_account(&account_id);
         self.internal_withdraw_use_unstaked(&account_id, account.unstaked)
     }
 
-    /// user method - simplified flow
-    /// completes delayed-unstake action by transferring from retrieved_from_the_pools to user's NEAR account
-    /// equivalent to core-contracts/staking-pool.withdraw_all, used by metastaking webapp
+    /// simplified flow, equivalent to withdraw_all, used by metapool.app frontend
     pub fn withdraw_unstaked(&mut self) -> Promise {
-        assert_not_lockup_account_calling();
-        let account_id = env::predecessor_account_id();
-        let account = self.internal_get_account(&account_id);
-        self.internal_withdraw_use_unstaked(&account_id, account.unstaked)
+        self.withdraw_all()
     }
 
     /// Deposits the attached amount into the inner account of the predecessor and stakes it.
     #[payable]
     pub fn deposit_and_stake(&mut self) -> U128String {
-        assert_not_lockup_account_calling();
+        require_not_lockup_account_calling();
         let account_id = env::predecessor_account_id();
         let amount = self.internal_deposit(&account_id);
         let (amount, shares) = self.internal_stake_from_account(&account_id, amount);
@@ -398,7 +396,7 @@ impl MetaPool {
     /// Unstakes all staked balance from the inner account of the predecessor.
     /// The new total unstaked balance will be available for withdrawal in four epochs.
     pub fn unstake_all(&mut self) {
-        assert_not_lockup_account_calling();
+        require_not_lockup_account_calling();
         let account_id = env::predecessor_account_id();
         let mut account = self.internal_get_account(&account_id);
         let all_shares = account.stake_shares;
@@ -410,7 +408,7 @@ impl MetaPool {
     /// The new total unstaked balance will be available for withdrawal in four epochs.
     /// delayed_unstake, amount_requested is in yoctoNEARs
     pub fn unstake(&mut self, amount: U128String) {
-        assert_not_lockup_account_calling();
+        require_not_lockup_account_calling();
         let account_id = env::predecessor_account_id();
         self.internal_unstake(&account_id, amount.0);
     }
@@ -420,7 +418,7 @@ impl MetaPool {
     /*******************/
     #[payable]
     pub fn stake_for_lockup(&mut self, lockup_account_id: &AccountId) -> U128String {
-        assert_lockup_contract_calling();
+        require_lockup_contract_calling();
         let amount = self.internal_deposit(lockup_account_id);
         let (amount, shares) = self.internal_stake_from_account(lockup_account_id, amount);
         //----------
@@ -446,7 +444,7 @@ impl MetaPool {
         lockup_account_id: &AccountId,
         shares: U128String,
     ) -> (U128String, U64String) {
-        assert_lockup_contract_calling();
+        require_lockup_contract_calling();
         let mut acc = self.internal_get_account(lockup_account_id);
         let (nears, epoch) = self.internal_unstake_shares(&lockup_account_id, &mut acc, shares.0);
         (nears.into(), epoch.into())
@@ -457,7 +455,7 @@ impl MetaPool {
         lockup_account_id: &AccountId,
         amount: U128String,
     ) -> Promise {
-        assert_lockup_contract_calling();
+        require_lockup_contract_calling();
         self.internal_withdraw_use_unstaked(lockup_account_id, amount.0)
     }
 
@@ -510,7 +508,7 @@ impl MetaPool {
             numerator: (self.operator_rewards_fee_basis_points
                 + DEVELOPERS_REWARDS_FEE_BASIS_POINTS)
                 .into(),
-            denominator: 10_000,
+            denominator: BP_100_PERCENT as u32,
         };
     }
     pub fn get_reward_fee_bp(&self) -> u16 {
@@ -519,9 +517,9 @@ impl MetaPool {
 
     #[payable]
     pub fn set_reward_fee(&mut self, basis_points: u16) {
-        self.assert_owner_calling();
+        self.require_owner_calling();
         assert_one_yocto();
-        assert!(basis_points <= 1000); // less than or equal 10%
+        require!(basis_points <= 1000); // less than or equal 10%
         self.operator_rewards_fee_basis_points =
             basis_points.saturating_sub(DEVELOPERS_REWARDS_FEE_BASIS_POINTS);
     }
@@ -603,8 +601,8 @@ impl MetaPool {
         st_near_to_burn: U128String,
         min_expected_near: U128String,
     ) -> LiquidUnstakeResult {
-        self.assert_not_busy();
-        self.assert_not_staking_paused();
+        self.require_not_busy();
+        self.require_not_paused();
         // Q: Why not? - R: liquid_unstake It's not as problematic as transfer, because it moves tokens between accounts of the same user
         // so let's remove the one_yocto_requirement, waiting for a better solution for the function-call keys NEP-141 problem
         //assert_one_yocto();
@@ -630,29 +628,28 @@ impl MetaPool {
             st_near_to_sell
         );
 
-        assert!(
+        require!(
             stnear_owned >= st_near_to_sell,
-            "Not enough stNEAR. You own {}",
-            stnear_owned
+            format!("Not enough stNEAR. You own {}", stnear_owned)
         );
 
         let mut nslp_account = self.internal_get_nslp_account();
 
-        //compute how many nears are the st_near valued at
+        // compute how many nears are the st_near valued at
         let nears_out = self.amount_from_stake_shares(st_near_to_sell);
         let swap_fee_basis_points =
             self.internal_get_discount_basis_points(nslp_account.available, nears_out);
-        assert!(swap_fee_basis_points < 10000, "inconsistency d>1");
         let fee = apply_pct(swap_fee_basis_points, nears_out);
 
         let near_to_receive = nears_out - fee;
-        assert!(
+        require!(
             near_to_receive >= min_expected_near.0,
-            "Price changed, your min amount {} is not satisfied {}. Try again",
-            min_expected_near.0,
-            near_to_receive
+            format!(
+                "Price changed, your min amount {} is not satisfied {}. Try again",
+                min_expected_near.0, near_to_receive
+            )
         );
-        assert!(
+        require!(
             nslp_account.available >= near_to_receive,
             "Not enough liquidity in the liquidity pool"
         );
@@ -666,21 +663,21 @@ impl MetaPool {
 
         // involved accounts
         let treasury_account_id = self.treasury_account_id.clone();
-        assert!(
+        require!(
             &account_id != &treasury_account_id,
             "can't use treasury account"
         );
         let mut treasury_account = self.accounts.get(&treasury_account_id).unwrap_or_default();
 
         let operator_account_id = self.operator_account_id.clone();
-        assert!(
+        require!(
             &account_id != &operator_account_id,
             "can't use operator account"
         );
         let mut operator_account = self.accounts.get(&operator_account_id).unwrap_or_default();
 
         let developers_account_id = AccountId::new_unchecked(DEVELOPERS_ACCOUNT_ID.into());
-        assert!(
+        require!(
             &account_id != &developers_account_id,
             "can't use developers account"
         );
@@ -771,8 +768,8 @@ impl MetaPool {
     /// and the amount of shares to burn
     //#[payable]
     pub fn nslp_remove_liquidity(&mut self, amount: U128String) -> RemoveLiquidityResult {
-        self.assert_not_busy();
-        self.assert_not_staking_paused();
+        self.require_not_busy();
+        self.require_not_paused();
         //assert_one_yocto();
 
         let account_id = env::predecessor_account_id();
@@ -791,10 +788,12 @@ impl MetaPool {
             to_remove = valued_actual_shares;
             nslp_shares_to_burn = acc.nslp_shares; // close enough to all shares, burn-it all (avoid leaving "dust")
         } else {
-            assert!(
+            require!(
                 valued_actual_shares >= to_remove,
-                "Not enough share value {} to remove the requested amount from the pool",
-                valued_actual_shares
+                format!(
+                    "Not enough share value {} to remove the requested amount from the pool",
+                    valued_actual_shares
+                )
             );
             // Calculate the number of "nslp" shares that the account will burn based on the amount requested
             nslp_shares_to_burn = self.nslp_shares_from_amount(to_remove, &nslp_account);
@@ -861,12 +860,12 @@ impl MetaPool {
     #[payable]
     pub fn stake_from_nslp(&mut self, near_amount: U128String) {
         assert_one_yocto();
-        self.assert_operator_or_owner();
+        self.require_operator_or_owner();
         // check the amount
         let nslp_account = self.internal_get_nslp_account();
         let amount = near_amount.0;
-        assert!(nslp_account.available > amount, "too much");
-        assert!(
+        require!(nslp_account.available > amount, "too much");
+        require!(
             nslp_account.available - amount > self.nslp_liquidity_target,
             "stake will leave NSLP below target"
         );
@@ -880,8 +879,8 @@ impl MetaPool {
     ///
     #[cfg(target_arch = "wasm32")]
     pub fn upgrade(self) -> Promise {
-        assert!(env::predecessor_account_id() == self.owner_account_id);
-        assert!(
+        require!(env::predecessor_account_id() == self.owner_account_id);
+        require!(
             env::prepaid_gas() > near_sdk::Gas(150 * TGAS),
             "set 200TGAS or more for this transaction"
         );
