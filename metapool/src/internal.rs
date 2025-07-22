@@ -689,6 +689,18 @@ impl MetaPool {
         (amount, 0)
     }
 
+    //----------------------------------------------------------------------
+    // End of Epoch clearing of STAKE_ORDERS vs UNSTAKE_ORDERS
+    //----------------------------------------------------------------------
+    // At the end of the epoch, only the delta between stake & unstake orders needs to be actually staked
+    // if there are more in the stake orders than the unstake orders, some NEAR will not be sent to the pools
+    // e.g. stake-orders: 1200, unstake-orders:1000 => net: stake 200 and keep 1000 to fulfill unstake claims after 4 epochs.
+    // if there was more in the unstake orders than in the stake orders, a real unstake was initiated with one or more pools,
+    // the rest should also be kept to fulfill unstake claims after 4 epochs.
+    // e.g. stake-orders: 700, unstake-orders:1000 => net: start-unstake 300 and keep 700 to fulfill unstake claims after 4 epochs
+    // if the delta is 0, there's no real stake-unstake, but the amount should be kept to fulfill unstake claims after 4 epochs
+    // e.g. stake-orders: 500, unstake-orders:500 => net: 0 so keep 500 to fulfill unstake claims after 4 epochs.
+    //
     pub(crate) fn internal_end_of_epoch_clearing(&mut self) {
         self.assert_not_busy();
         // This method is called before any actual staking/unstaking.

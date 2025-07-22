@@ -105,10 +105,10 @@ impl MetaPool {
             } else {
                 //here the sp has no sizable unstaked balance, we must deposit_and_stake on the sp from our balance
 
-                // NOTE: This contract holds also the liquidity pool for fast unstake may be too optimistic, why not compute the storage explicitly and add
-                //    a safety margin on top of that. That's because the account state may
-                //    potentially exceed the 35N (or 3.5M right now). But I guess it can happen
-                //    only at the beginning of metapool before the liquidity is provided.
+                // Make sure we keep a minimum balance in the contract to backup storage
+                // NOTE: This contract holds also the liquidity pool for fast unstake, so it has normally more than enough
+                //    balance to backup storage. Anyhow we setup a minimum balance of 35N.
+                //    This can only happen at the beginning of metapool before the liquidity is provided.
                 assert!(
                     env::account_balance() - MIN_BALANCE_FOR_STORAGE >= amount_to_stake,
                     "env::account_balance()-MIN_BALANCE_FOR_STORAGE < amount_to_stake {}",
@@ -901,23 +901,6 @@ impl MetaPool {
         );
 
         return retrieved_amount.into();
-    }
-
-    // Operator method, but open to anyone. No need to be called, is auto called before distribute stake/unstake
-    //----------------------------------------------------------------------
-    // End of Epoch clearing of STAKE_ORDERS vs UNSTAKE_ORDERS
-    //----------------------------------------------------------------------
-    // At the end of the epoch, only the delta between stake & unstake orders needs to be actually staked
-    // if there are more in the stake orders than the unstake orders, some NEAR will not be sent to the pools
-    // e.g. stake-orders: 1200, unstake-orders:1000 => net: stake 200 and keep 1000 to fulfill unstake claims after 4 epochs.
-    // if there was more in the unstake orders than in the stake orders, a real unstake was initiated with one or more pools,
-    // the rest should also be kept to fulfill unstake claims after 4 epochs.
-    // e.g. stake-orders: 700, unstake-orders:1000 => net: start-unstake 300 and keep 700 to fulfill unstake claims after 4 epochs
-    // if the delta is 0, there's no real stake-unstake, but the amount should be kept to fulfill unstake claims after 4 epochs
-    // e.g. stake-orders: 500, unstake-orders:500 => net: 0 so keep 500 to fulfill unstake claims after 4 epochs.
-    //
-    pub fn end_of_epoch_clearing(&mut self) {
-        self.internal_end_of_epoch_clearing()
     }
 
     /// compute max cap for the unstakes-for-rebalance

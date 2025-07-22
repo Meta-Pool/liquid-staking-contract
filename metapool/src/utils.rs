@@ -21,15 +21,6 @@ macro_rules! debug_log {
     ($($arg:tt)*) => {{}};
 }
 
-pub fn assert_min_balance(amount: u128) {
-    assert!(amount > 0, "Amount should be positive");
-    assert!(
-        env::account_balance() >= MIN_BALANCE_FOR_STORAGE
-            && env::account_balance() - MIN_BALANCE_FOR_STORAGE > amount,
-        "The contract account balance can't go lower than MIN_BALANCE"
-    );
-}
-
 pub fn assert_one_yocto() {
     assert!(
         env::attached_deposit() == 1,
