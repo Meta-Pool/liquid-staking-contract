@@ -133,11 +133,12 @@ impl MetaPool {
     /// takes from account.available and mints stNEAR for account_id
     /// actual stake in a staking-pool is made by the meta-pool-heartbeat before the end of the epoch
     /// account_id must be registered
+    /// returns near_amount finally used and the number of shares minted
     pub(crate) fn internal_stake_from_account(
         &mut self,
         account_id: &AccountId,
         near_amount: Balance,
-    ) -> u128 {
+    ) -> (u128, u128) {
         self.assert_not_busy();
 
         assert!(
@@ -148,7 +149,7 @@ impl MetaPool {
 
         let mut acc = self.internal_get_account(account_id);
 
-        // take from the account "available" balance
+        // take from the account "available" balance (rounds-up near to total available to avoid dust)
         // also subs self.total_available
         let amount = acc.take_from_available(account_id, near_amount, self);
 
@@ -172,7 +173,7 @@ impl MetaPool {
             account_id,
             amount
         );
-        num_shares
+        (amount, num_shares)
     }
 
     //------------------------------

@@ -41,6 +41,7 @@
         "rlib",
         "rustc",
         "RUSTFLAGS",
+        "secp256k1",
         "Seedable",
         "shld",
         "simtest",

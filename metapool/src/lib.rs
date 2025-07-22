@@ -378,7 +378,7 @@ impl MetaPool {
         assert_not_lockup_account_calling();
         let account_id = env::predecessor_account_id();
         let amount = self.internal_deposit(&account_id);
-        let shares = self.internal_stake_from_account(&account_id, amount);
+        let (amount, shares) = self.internal_stake_from_account(&account_id, amount);
         //----------
         // check if the liquidity pool needs liquidity, and then use this opportunity to liquidate stnear in the LP by internal-clearing
         // the amount just deposited, might be swapped in the liquid-unstake pool
@@ -433,7 +433,7 @@ impl MetaPool {
     pub fn stake_for_lockup(&mut self, lockup_account_id: &AccountId) -> U128String {
         assert_lockup_contract_calling();
         let amount = self.internal_deposit(lockup_account_id);
-        let shares = self.internal_stake_from_account(lockup_account_id, amount);
+        let (amount, shares) = self.internal_stake_from_account(lockup_account_id, amount);
         //----------
         // check if the liquidity pool needs liquidity, and then use this opportunity to liquidate stnear in the LP by internal-clearing
         // the amount just deposited, might be swapped in the liquid-unstake pool
