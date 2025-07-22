@@ -64,10 +64,12 @@ impl MetaPool {
     pub fn storage_unregister(&mut self, force: Option<bool>) -> bool {
         assert_one_yocto();
         if let Some(account) = self.accounts.get(&env::predecessor_account_id()) {
-            // account exists
-            if !account.can_be_closed() {
-                panic!("cannot close account with balance in stNEAR or LP-NEAR-stNEAR");
-            }
+            // if the account exists
+            // check that it has no balances
+            assert!(
+                account.can_be_closed(),
+                "cannot close account with balance in stNEAR or LP-NEAR-stNEAR"
+            );
             // remove account, make sure something is removed
             assert!(
                 self.accounts
@@ -77,8 +79,10 @@ impl MetaPool {
             );
             // return storage yoctos
             Promise::new(env::predecessor_account_id()).transfer(STORAGE_COST_YOCTOS);
-        };
-        true
+            true // account was removed
+        } else {
+            false // account does not exist, nothing to unregister
+        }
     }
 
     // max & min total storage balance
