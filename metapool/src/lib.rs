@@ -14,9 +14,7 @@ const SOURCE_URL: &str = "github.com/Meta-Pool/liquid-staking-contract";
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, UnorderedMap};
-use near_sdk::{
-    env, ext_contract, log, near_bindgen, AccountId, PanicOnDefault, Promise, PublicKey,
-};
+use near_sdk::{env, ext_contract, log, near_bindgen, AccountId, PanicOnDefault, Promise};
 
 pub mod gas;
 pub mod types;
@@ -255,6 +253,7 @@ impl MetaPool {
         and view methods: get_account_unstaked_balance, get_account_staked_balance, get_account_total_balance, is_account_unstaked_balance_available,
             get_total_staked_balance, get_owner_id, get_reward_fee_fraction, is_staking_paused, get_staking_key, get_account,
             get_number_of_accounts, get_accounts.
+        Note: Some functions are not emulated like: get_staking_key, and other are condensed in fn deposit_and_stake
 
     2. meta-staking: these are the extensions to the standard staking pool (liquid stake/unstake)
 
@@ -341,12 +340,7 @@ impl MetaPool {
     pub fn ping(&mut self) {}
 
     /// Deposits the attached amount into the inner account of the predecessor.
-    #[payable]
-    pub fn deposit(&mut self) {
-        //block "deposit" only, so all actions are thru the simplified user-flow, using deposit_and_stake
-        panic!("please use deposit_and_stake");
-        //self.internal_deposit();
-    }
+    // Note: pub fn deposit(&mut self)  is not implemented, use fn deposit_and_stake
 
     /// Withdraws from "UNSTAKED" balance *TO MIMIC core-contracts/staking-pool* .- core-contracts/staking-pool only has "unstaked" to withdraw from
     pub fn withdraw(&mut self, amount: U128String) -> Promise {
@@ -395,16 +389,11 @@ impl MetaPool {
 
     /// Stakes all "unstaked" balance from the inner account of the predecessor.
     /// we keep this to implement the staking-pool trait, but we don't support re-staking unstaked amounts
-    pub fn stake_all(&mut self) {
-        panic!("please use deposit_and_stake");
-    }
+    // Note: pub fn stake_all(&mut self) is not implemented, use fn deposit_and_stake
 
     /// Stakes the given amount from the inner account of the predecessor.
     /// we keep this to implementing the staking-pool trait, but we don't support re-staking unstaked amounts
-    #[allow(unused_variables)]
-    pub fn stake(&mut self, amount: U128String) {
-        panic!("please use deposit_and_stake");
-    }
+    // Note: pub fn stake(&mut self, amount: U128String) is not implemented, use fn deposit_and_stake
 
     /// Unstakes all staked balance from the inner account of the predecessor.
     /// The new total unstaked balance will be available for withdrawal in four epochs.
@@ -535,11 +524,6 @@ impl MetaPool {
         assert!(basis_points <= 1000); // less than or equal 10%
         self.operator_rewards_fee_basis_points =
             basis_points.saturating_sub(DEVELOPERS_REWARDS_FEE_BASIS_POINTS);
-    }
-
-    /// Returns the staking public key
-    pub fn get_staking_key(&self) -> PublicKey {
-        panic!("no specific staking key for the div-pool");
     }
 
     /// Returns true if the staking is paused
@@ -888,21 +872,6 @@ impl MetaPool {
         );
         // stake from nslp
         self.internal_stake_from_account(&Self::nslp_internal_account_id(), amount);
-    }
-
-    /// deprecated, kept for bin compat
-    pub fn realize_meta(&mut self, account_id: String) {
-        // this fn should not be called for the NSLP_INTERNAL_ACCOUNT
-        assert!(account_id != NSLP_INTERNAL_ACCOUNT);
-    }
-
-    //------------------
-    // HARVEST META (now mpDAO)
-    //------------------
-    #[payable]
-    /// deprecated - kept for bin compat
-    pub fn harvest_meta(&mut self) -> Promise {
-        panic!("internal incentives have been deactivated. Use stNEAR in the ecosystem to get incentives");
     }
 
     //---------------------------------------------------------------------------
