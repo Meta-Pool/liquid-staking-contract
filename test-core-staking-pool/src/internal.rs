@@ -29,12 +29,11 @@ impl StakingContract {
         self.internal_save_account(&account_id, &account);
         self.last_total_balance += amount;
 
-        env::log(
-            format!(
-                "@{} deposited {}. New unstaked balance is {}",
-                account_id, amount, account.unstaked
-            )
-            .as_bytes(),
+        near_sdk::log!(
+            "@{} deposited {}. New unstaked balance is {}",
+            account_id,
+            amount,
+            account.unstaked
         );
         amount
     }
@@ -55,12 +54,11 @@ impl StakingContract {
         account.unstaked -= amount;
         self.internal_save_account(&account_id, &account);
 
-        env::log(
-            format!(
-                "@{} withdrawing {}. New unstaked balance is {}",
-                account_id, amount, account.unstaked
-            )
-            .as_bytes(),
+        near_sdk::log!(
+            "@{} withdrawing {}. New unstaked balance is {}",
+            account_id,
+            amount,
+            account.unstaked
         );
 
         Promise::new(account_id).transfer(amount);
@@ -105,19 +103,14 @@ impl StakingContract {
         self.total_staked_balance += stake_amount;
         self.total_stake_shares += num_shares;
 
-        env::log(
-            format!(
+        near_sdk::log!(
                 "@{} staking {}. Received {} new staking shares. Total {} unstaked balance and {} staking shares",
                 account_id, charge_amount, num_shares, account.unstaked, account.stake_shares
-            )
-                .as_bytes(),
         );
-        env::log(
-            format!(
-                "Contract total staked balance is {}. Total number of shares {}",
-                self.total_staked_balance, self.total_stake_shares
-            )
-            .as_bytes(),
+        near_sdk::log!(
+            "Contract total staked balance is {}. Total number of shares {}",
+            self.total_staked_balance,
+            self.total_stake_shares
         );
     }
 
@@ -164,19 +157,18 @@ impl StakingContract {
         self.total_staked_balance -= unstake_amount;
         self.total_stake_shares -= num_shares;
 
-        env::log(
-            format!(
-                "@{} unstaking {}. Spent {} staking shares. Total {} unstaked balance and {} staking shares",
-                account_id, receive_amount, num_shares, account.unstaked, account.stake_shares
-            )
-                .as_bytes(),
+        near_sdk::log!(
+            "@{} unstaking {}. Spent {} staking shares. Total {} unstaked balance and {} staking shares",
+            account_id,
+            receive_amount,
+            num_shares,
+            account.unstaked,
+            account.stake_shares
         );
-        env::log(
-            format!(
-                "Contract total staked balance is {}. Total number of shares {}",
-                self.total_staked_balance, self.total_stake_shares
-            )
-            .as_bytes(),
+        near_sdk::log!(
+            "Contract total staked balance is {}. Total number of shares {}",
+            self.total_staked_balance,
+            self.total_stake_shares
         );
     }
 
@@ -233,15 +225,15 @@ impl StakingContract {
             // received any shares or not.
             self.total_staked_balance += owners_fee;
 
-            env::log(
-                format!(
-                    "Epoch {}: Contract received total rewards of {} tokens. New total staked balance is {}. Total number of shares {}",
-                    epoch_height, total_reward, self.total_staked_balance, self.total_stake_shares,
-                )
-                    .as_bytes(),
+            near_sdk::log!(
+                "Epoch {}: Contract received total rewards of {} tokens. New total staked balance is {}. Total number of shares {}",
+                epoch_height,
+                total_reward,
+                self.total_staked_balance,
+                self.total_stake_shares,
             );
             if num_shares > 0 {
-                env::log(format!("Total rewards fee is {} stake shares.", num_shares).as_bytes());
+                near_sdk::log!("Total rewards fee is {} stake shares.", num_shares);
             }
         }
 
