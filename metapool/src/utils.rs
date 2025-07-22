@@ -1,5 +1,5 @@
 pub use crate::types::*;
-use near_sdk::{env, PromiseResult};
+use near_sdk::{env, AccountId, PromiseResult};
 
 #[macro_export]
 macro_rules! event {
@@ -39,14 +39,15 @@ pub fn assert_lockup_contract_calling() {
 }
 
 /// verify if it a lockup account
-pub fn is_lockup_account(account_id: &String) -> bool {
-    account_id.ends_with(".lockup.near") || account_id.ends_with(".lockupy.testnet")
+pub fn is_lockup_account(account_id: &AccountId) -> bool {
+    account_id.as_str().ends_with(".lockup.near")
+        || account_id.as_str().ends_with(".lockupy.testnet")
 }
 
 /// assert it is not a lockup account
 pub fn assert_not_lockup_account_calling() {
     assert!(
-        !is_lockup_account(&env::predecessor_account_id().to_string()),
+        !is_lockup_account(&env::predecessor_account_id()),
         "a .lockup.near account can not be used here"
     );
 }

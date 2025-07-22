@@ -50,17 +50,15 @@ impl MetaPool {
 /* Internal methods staking-pool trait */
 /***************************************/
 impl MetaPool {
-    pub(crate) fn internal_deposit(&mut self, account_id: &String) -> u128 {
+    pub(crate) fn internal_deposit(&mut self, account_id: &AccountId) -> u128 {
         self.assert_min_deposit_amount(env::attached_deposit());
         self.internal_deposit_attached_near_into(account_id)
     }
 
     // adds env::attached_deposit() to account.available
     // if it is a new account, takes STORAGE_COST_YOCTOS as storage_deposit
-    pub(crate) fn internal_deposit_attached_near_into(&mut self, account_id: &String) -> u128 {
-        let opt_account = self
-            .accounts
-            .get(&AccountId::new_unchecked(account_id.into()));
+    pub(crate) fn internal_deposit_attached_near_into(&mut self, account_id: &AccountId) -> u128 {
+        let opt_account = self.accounts.get(account_id);
         let amount = if opt_account.is_none() {
             // account does not exists
             // take some yoctos as storage deposit - the user can recover that amount when closing the account
@@ -83,7 +81,7 @@ impl MetaPool {
         self.total_available += amount;
         self.contract_account_balance += amount;
 
-        self.internal_update_account(&account_id, &account);
+        self.internal_update_account(account_id, &account);
 
         log!(
             "{} deposited into @{}'s account. New available balance is {}",
@@ -98,13 +96,13 @@ impl MetaPool {
     // MIMIC staking-pool, if there are unstaked, it must be free to withdraw
     pub(crate) fn internal_withdraw_use_unstaked(
         &mut self,
-        account_id: &String,
+        account_id: &AccountId,
         requested_amount: u128,
     ) -> Promise {
-        let mut account = self.internal_get_account(&account_id);
+        let mut account = self.internal_get_account(account_id);
 
         //MIMIC staking-pool, move 1st form unstaked->available, it must be free to withdraw
-        account.in_memory_try_finish_unstaking(&account_id, requested_amount, self);
+        account.in_memory_try_finish_unstaking(account_id, requested_amount, self);
 
         // NOTE: While ability to withdraw close to all available helps, it prevents lockup contracts from using this in a replacement to a staking pool,
         // because the lockup contracts relies on exact precise amount being withdrawn.
@@ -116,14 +114,14 @@ impl MetaPool {
         //     "The min balance for an open account is {} NEAR. You need to close the account to remove all funds",
         //     self.min_account_balance/NEAR);
 
-        self.internal_update_account(&account_id, &account);
+        self.internal_update_account(account_id, &account);
         //transfer to user native near account
         self.native_transfer(account_id, amount)
     }
-    pub(crate) fn native_transfer(&mut self, account_id: &String, amount: u128) -> Promise {
+    pub(crate) fn native_transfer(&mut self, account_id: &AccountId, amount: u128) -> Promise {
         //transfer to user native near account
         self.contract_account_balance -= amount;
-        Promise::new(AccountId::new_unchecked(account_id.clone())).transfer(amount)
+        Promise::new(account_id.clone()).transfer(amount)
     }
 
     //------------------------------
@@ -132,7 +130,7 @@ impl MetaPool {
     /// account_id must be registered
     pub(crate) fn internal_stake_from_account(
         &mut self,
-        account_id: &String,
+        account_id: &AccountId,
         near_amount: Balance,
     ) -> u128 {
         self.assert_not_busy();
@@ -143,11 +141,11 @@ impl MetaPool {
             self.min_deposit_amount
         );
 
-        let mut acc = self.internal_get_account(&account_id);
+        let mut acc = self.internal_get_account(account_id);
 
         // take from the account "available" balance
         // also subs self.total_available
-        let amount = acc.take_from_available(&account_id, near_amount, self);
+        let amount = acc.take_from_available(account_id, near_amount, self);
 
         // Calculate the number of st_near (stake shares) that the account will receive for staking the given amount.
         let num_shares = self.stake_shares_from_amount(amount);
@@ -161,7 +159,7 @@ impl MetaPool {
         self.epoch_stake_orders += amount;
 
         //--SAVE ACCOUNT--
-        self.internal_update_account(&account_id, &acc);
+        self.internal_update_account(account_id, &acc);
 
         //log event
         event!(
@@ -174,10 +172,10 @@ impl MetaPool {
 
     //------------------------------
     /// delayed_unstake, amount_requested is in yoctoNEARs
-    pub(crate) fn internal_unstake(&mut self, account_id: &String, amount_requested: u128) {
+    pub(crate) fn internal_unstake(&mut self, account_id: &AccountId, amount_requested: u128) {
         self.assert_not_busy();
 
-        let mut acc = self.internal_get_account(&account_id);
+        let mut acc = self.internal_get_account(account_id);
 
         // compute how much shares it will be
         let shares_from_requested = self.stake_shares_from_amount(amount_requested);
@@ -195,7 +193,7 @@ impl MetaPool {
         self.internal_unstake_shares(account_id, &mut acc, stake_shares_to_burn);
 
         events::FtBurn {
-            owner_id: &AccountId::new_unchecked(account_id.into()),
+            owner_id: account_id,
             amount: stake_shares_to_burn.into(),
             memo: None,
         }
@@ -204,7 +202,7 @@ impl MetaPool {
 
     pub(crate) fn internal_unstake_shares(
         &mut self,
-        account_id: &String,
+        account_id: &AccountId,
         acc: &mut Account,
         stake_shares_to_burn: u128,
     ) -> (u128, u64) {
@@ -224,7 +222,7 @@ impl MetaPool {
         self.total_for_staking -= amount_to_unstake;
 
         //--SAVE ACCOUNT--
-        self.internal_update_account(&account_id, acc);
+        self.internal_update_account(account_id, acc);
 
         event!(
             r#"{{"event":"D-UNSTK","account_id":"{}","amount":"{}","shares":"{}"}}"#,
@@ -250,12 +248,12 @@ impl MetaPool {
     /// account mus be registered previously
     pub(crate) fn internal_nslp_add_liquidity(
         &mut self,
-        account_id: &String,
+        account_id: &AccountId,
         amount_requested: u128,
     ) -> u16 {
         self.assert_not_busy();
 
-        let mut acc = self.internal_get_account(&account_id);
+        let mut acc = self.internal_get_account(account_id);
 
         //take from the account "available" balance
         let amount = acc.take_from_available(account_id, amount_requested, self);
@@ -281,7 +279,7 @@ impl MetaPool {
         let result_bp = proportional(10_000, acc.nslp_shares, nslp_account.nslp_shares) as u16;
 
         //--SAVE ACCOUNTS
-        self.internal_update_account(&account_id, &acc);
+        self.internal_update_account(account_id, &acc);
         self.internal_save_nslp_account(&nslp_account);
 
         event!(
@@ -472,36 +470,35 @@ impl MetaPool {
     }
 
     /// Inner method to get the given account - IT MUST exists (has to be previously registered)
-    pub(crate) fn internal_get_account(&self, account_id: &String) -> Account {
-        let opt_account = self
-            .accounts
-            .get(&AccountId::new_unchecked(account_id.into()));
+    pub(crate) fn internal_get_account(&self, account_id: &AccountId) -> Account {
+        let opt_account = self.accounts.get(account_id);
         if opt_account.is_none() {
             panic!("account {} is not registered", account_id)
         }
         opt_account.unwrap()
     }
 
-    pub(crate) fn account_exists(&self, account_id: &String) -> bool {
-        self.accounts
-            .get(&AccountId::new_unchecked(account_id.into()))
-            .is_some()
+    pub(crate) fn account_exists(&self, account_id: &AccountId) -> bool {
+        self.accounts.get(account_id).is_some()
     }
 
     /// Inner method to save the given account for a given account ID.
-    pub(crate) fn internal_update_account(&mut self, account_id: &String, account: &Account) {
-        self.accounts
-            .insert(&AccountId::new_unchecked(account_id.into()), &account); //insert_or_update
+    pub(crate) fn internal_update_account(&mut self, account_id: &AccountId, account: &Account) {
+        self.accounts.insert(account_id, &account); //insert_or_update
+    }
+
+    pub(crate) fn nslp_internal_account_id() -> AccountId {
+        AccountId::new_unchecked(NSLP_INTERNAL_ACCOUNT.into())
     }
 
     /// Inner method to get the given account or a new default value account.
     pub(crate) fn internal_get_nslp_account(&self) -> Account {
         self.accounts
-            .get(&AccountId::new_unchecked(NSLP_INTERNAL_ACCOUNT.into()))
+            .get(&Self::nslp_internal_account_id())
             .unwrap_or_default()
     }
     pub(crate) fn internal_save_nslp_account(&mut self, nslp_account: &Account) {
-        self.internal_update_account(&NSLP_INTERNAL_ACCOUNT.into(), &nslp_account);
+        self.internal_update_account(&Self::nslp_internal_account_id(), &nslp_account);
     }
 
     /// finds a staking pool requiring some stake to get balanced
@@ -607,8 +604,8 @@ impl MetaPool {
             "Sender and receiver should be different"
         );
         assert!(amount > 0, "The amount should be a positive number");
-        let mut sender_acc = self.internal_get_account(&sender_id.to_string());
-        let mut receiver_acc = self.internal_get_account(&receiver_id.to_string());
+        let mut sender_acc = self.internal_get_account(sender_id);
+        let mut receiver_acc = self.internal_get_account(receiver_id);
         assert!(
             amount <= sender_acc.stake_shares,
             "@{} not enough stNEAR balance {}",
@@ -620,8 +617,8 @@ impl MetaPool {
         sender_acc.sub_stake_shares(amount, near_amount);
         receiver_acc.add_stake_shares(amount, near_amount);
 
-        self.internal_update_account(&sender_id.to_string(), &sender_acc);
-        self.internal_update_account(&receiver_id.to_string(), &receiver_acc);
+        self.internal_update_account(sender_id, &sender_acc);
+        self.internal_update_account(receiver_id, &receiver_acc);
 
         events::FtTransfer {
             old_owner_id: &sender_id,
@@ -663,11 +660,11 @@ impl MetaPool {
                 let refund_amount = std::cmp::min(receiver_balance, unused_amount);
                 let near_amount = self.amount_from_stake_shares(refund_amount); //amount is in stNEAR(aka shares), let's compute how many nears that is
                 receiver_acc.sub_stake_shares(refund_amount, near_amount);
-                self.internal_update_account(&receiver_id.to_string(), &receiver_acc);
+                self.internal_update_account(&receiver_id, &receiver_acc);
 
                 let mut sender_acc = self.accounts.get(&sender_id).unwrap_or_default(); // avoid panics
                 sender_acc.add_stake_shares(refund_amount, near_amount);
-                self.internal_update_account(&sender_id.to_string(), &sender_acc);
+                self.internal_update_account(sender_id, &sender_acc);
 
                 events::FtTransfer {
                     old_owner_id: &sender_id,

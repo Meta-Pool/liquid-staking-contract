@@ -89,7 +89,7 @@ impl MetaPool {
         }
     }
     pub fn storage_balance_of(&self, account_id: AccountId) -> Option<StorageBalance> {
-        if self.account_exists(&account_id.to_string()) {
+        if self.account_exists(&account_id) {
             // if account exists
             Some(StorageBalance {
                 total: U128::from(STORAGE_COST_YOCTOS),
