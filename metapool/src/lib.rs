@@ -438,6 +438,14 @@ impl MetaPool {
         // check if the liquidity pool needs liquidity, and then use this opportunity to liquidate stnear in the LP by internal-clearing
         // the amount just deposited, might be swapped in the liquid-unstake pool
         self.nslp_try_internal_clearing(amount);
+
+        events::FtMint {
+            owner_id: &lockup_account_id,
+            amount: shares.into(),
+            memo: None,
+        }
+        .emit();
+        // return the shares minted
         shares.into()
     }
     /// Unstakes the exact amount of shares from a lockup account

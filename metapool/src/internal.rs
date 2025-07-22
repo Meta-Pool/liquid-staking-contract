@@ -191,13 +191,6 @@ impl MetaPool {
             shares_from_requested
         };
         self.internal_unstake_shares(account_id, &mut acc, stake_shares_to_burn);
-
-        events::FtBurn {
-            owner_id: account_id,
-            amount: stake_shares_to_burn.into(),
-            memo: None,
-        }
-        .emit();
     }
 
     pub(crate) fn internal_unstake_shares(
@@ -239,6 +232,13 @@ impl MetaPool {
             acc.stake_shares,
             env::epoch_height()
         );
+
+        events::FtBurn {
+            owner_id: account_id,
+            amount: stake_shares_to_burn.into(),
+            memo: None,
+        }
+        .emit();
         // return unstaked_requested_unlock_epoch
         (amount_to_unstake, acc.unstaked_requested_unlock_epoch)
     }
