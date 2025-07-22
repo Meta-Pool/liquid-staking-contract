@@ -298,9 +298,9 @@ impl MetaPool {
             accounts: UnorderedMap::new(b"A".to_vec()),
             loan_requests: LookupMap::new(b"L".to_vec()),
             nslp_liquidity_target: 10_000 * NEAR,
-            nslp_max_discount_basis_points: 180, //1.8%
-            nslp_min_discount_basis_points: 25,  //0.25%
-            min_deposit_amount: 10 * NEAR,
+            nslp_max_discount_basis_points: 180,     //1.8%
+            nslp_min_discount_basis_points: 25,      //0.25%
+            min_deposit_amount: ONE_NEAR, // 1 NEAR
             // (deprecated) for each stNEAR paid as discount, reward stNEAR sellers with META. initial 5x, default:1x. reward META = discounted * mult_pct / 100
             stnear_sell_meta_mult_pct: 50, //5x (deprecated)
             // (deprecated) for each stNEAR paid staking reward, reward stNEAR holders with META. initial 10x, default:5x. reward META = rewards * mult_pct / 100

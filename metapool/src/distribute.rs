@@ -47,7 +47,7 @@ impl MetaPool {
             self.epoch_stake_orders,
             self.total_for_staking - self.total_actually_staked,
         );
-        if total_amount_to_stake < MIN_STAKE_AMOUNT {
+        if total_amount_to_stake < MIN_MOVEMENT_AMOUNT {
             log!("amount too low {}", total_amount_to_stake);
             return false;
         }
@@ -204,7 +204,7 @@ impl MetaPool {
         self.assert_not_busy();
 
         assert!(
-            self.epoch_stake_orders > MIN_STAKE_AMOUNT,
+            self.epoch_stake_orders > MIN_MOVEMENT_AMOUNT,
             "self.epoch_stake_orders too low {}",
             self.epoch_stake_orders
         );
