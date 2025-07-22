@@ -620,6 +620,7 @@ impl MetaPool {
         min_expected_near: U128String,
     ) -> LiquidUnstakeResult {
         self.assert_not_busy();
+        self.assert_not_staking_paused();
         // Q: Why not? - R: liquid_unstake It's not as problematic as transfer, because it moves tokens between accounts of the same user
         // so let's remove the one_yocto_requirement, waiting for a better solution for the function-call keys NEP-141 problem
         //assert_one_yocto();
@@ -787,6 +788,7 @@ impl MetaPool {
     //#[payable]
     pub fn nslp_remove_liquidity(&mut self, amount: U128String) -> RemoveLiquidityResult {
         self.assert_not_busy();
+        self.assert_not_staking_paused();
         //assert_one_yocto();
 
         let account_id = env::predecessor_account_id();

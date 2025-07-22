@@ -44,6 +44,10 @@ impl MetaPool {
             self.min_deposit_amount
         );
     }
+
+    pub fn assert_not_staking_paused(&self) {
+        assert!(!self.is_staking_paused(), "Staking is paused");
+    }
 }
 
 /***************************************/
@@ -52,6 +56,7 @@ impl MetaPool {
 impl MetaPool {
     pub(crate) fn internal_deposit(&mut self, account_id: &AccountId) -> u128 {
         self.assert_min_deposit_amount(env::attached_deposit());
+        self.assert_not_staking_paused();
         self.internal_deposit_attached_near_into(account_id)
     }
 
