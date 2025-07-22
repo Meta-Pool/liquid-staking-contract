@@ -167,8 +167,10 @@ impl FungibleTokenMetadataProvider for MetaPool {
 
 #[near_bindgen]
 impl MetaPool {
-    pub fn ft_metadata_set(&self, data: FungibleTokenMetadata) {
+    #[payable]
+    pub fn ft_metadata_set(&mut self, data: FungibleTokenMetadata) {
         self.require_owner_calling();
+        require!(data.decimals == 24); // do not allow a change in decimals
         let mut metadata = ft_metadata_init_lazy_container();
         metadata.set(&data); //save into storage
     }
