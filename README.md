@@ -1,5 +1,5 @@
 # Meta Pool DAO
-# NEAR Blockchain Implementation
+# NEAR Blockchain Liquid Staking Implementation
 
 ## Overview
 What is Meta-Pool and other non-Technical Documentation
@@ -14,11 +14,20 @@ What is Meta-Pool and other non-Technical Documentation
 * [Technical Notes](https://narwallets.github.io/meta-pool/technical-notes)
 
 * [NEAR Live Contract Review (video)](https://www.youtube.com/watch?v=4gB-6yoas74)
+
 ### Repositories
 
-This is the Smart Contract repository. The Web App UI is at https://github.com/Narwallets/metastaking-webapp
+This is the Smart Contract repository.
+
+The TESTING repo, including fuzzy-testing is at https://github.com/Meta-Pool/liquid-staking-contract-fuzzy-testing
 
 ### Change Log
+
+#### `2.1.0` - July 2025
+
+- Audit from resonance, implement recommendations
+- Upgraded to near-sdk-4
+- Move the tests into a different repo with near-sdk-5 test harness
 
 #### `2.0.0` - Dec 2022
 
