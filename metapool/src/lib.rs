@@ -579,9 +579,9 @@ impl MetaPool {
     /// return how much NEAR you can get by selling x stNEAR
     pub fn get_near_amount_sell_stnear(&self, stnear_to_sell: U128String) -> U128String {
         let lp_account = self.internal_get_nslp_account();
-        return self
-            .internal_get_near_amount_sell_stnear(lp_account.available, stnear_to_sell.0)
-            .into();
+        let (amount, _fee) =
+            self.internal_get_near_amount_sell_stnear(lp_account.available, stnear_to_sell.0);
+        return amount.into();
     }
 
     /// NEAR/stNEAR Liquidity Pool
@@ -635,13 +635,8 @@ impl MetaPool {
 
         let mut nslp_account = self.internal_get_nslp_account();
 
-        // compute how many nears are the st_near valued at
-        let nears_out = self.amount_from_stake_shares(st_near_to_sell);
-        let swap_fee_basis_points =
-            self.internal_get_discount_basis_points(nslp_account.available, nears_out);
-        let fee = apply_pct(swap_fee_basis_points, nears_out);
-
-        let near_to_receive = nears_out - fee;
+        let (near_to_receive, fee) =
+            self.internal_get_near_amount_sell_stnear(nslp_account.available, st_near_to_sell);
         require!(
             near_to_receive >= min_expected_near.0,
             format!(

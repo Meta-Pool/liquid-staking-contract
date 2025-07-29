@@ -457,26 +457,18 @@ impl MetaPool {
     }
 
     /// NEAR/stNEAR SWAP functions
-    /// return how much NEAR you can get by selling x stNEAR
+    /// return how much NEAR you can get by selling x stNEAR and the fee amount
     pub(crate) fn internal_get_near_amount_sell_stnear(
         &self,
         available_near: u128,
         st_near_to_sell: u128,
-    ) -> u128 {
+    ) -> (u128, u128) {
         //compute how many nears are the st_near valued at
         let nears_out = self.amount_from_stake_shares(st_near_to_sell);
         let swap_fee_basis_points =
             self.internal_get_discount_basis_points(available_near, nears_out);
         let fee = apply_pct(swap_fee_basis_points, nears_out);
-        return (nears_out - fee).into(); //when stNEAR is sold user pays a swap fee (the user skips the waiting period)
-
-        // env::log(
-        //     format!(
-        //         "@{} withdrawing {}. New unstaked balance is {}",
-        //         account_id, amount, account.unstaked
-        //     )
-        //     .as_bytes(),
-        // );
+        return (nears_out - fee, fee); // when stNEAR is sold user pays a swap fee (the user skips the waiting period)
     }
 
     /// Inner method to get the given account - IT MUST exists (has to be previously registered)
