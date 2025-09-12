@@ -816,8 +816,8 @@ impl MetaPool {
     //----------------------------------------------------------------------
     /// launches a withdrawal call
     /// returns the amount withdrawn
-    /// you MUST call get_staking_pool_requiring_retrieve() first, to obtain a valid inx
-    /// and you MUST call sync_unstaked_balance(inx) before this, to get the exact amount to the yocto stored in sp.unstaked
+    /// 1. if you don't have the sp array, you may call get_staking_pool_requiring_retrieve() to obtain a valid inx
+    /// 2. you SHALL call sync_unstaked_balance(inx) before this, to get the exact amount to the yocto stored in sp.unstaked
     pub fn retrieve_funds_from_a_pool(&mut self, inx: u16) -> Promise {
         //Note: In order to make fund-recovering independent from the operator
         //this fn is open to be called by anyone
