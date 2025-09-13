@@ -31,6 +31,8 @@ pub const BP_100_PERCENT: u16 = 10_000; // basis points for 100%
 ///if there's less than MIN_MOVEMENT NEAR to stake/unstake, wait until there's more to justify the call & tx-fees
 pub const MIN_MOVEMENT_AMOUNT: u128 = ONE_NEAR;
 
+pub const YOCTO_DUST: u128 = 100; // 1e-21 NEAR
+
 pub const TGAS: u64 = 1_000_000_000_000;
 
 /// The number of epochs required for the locked balance to become unlocked.

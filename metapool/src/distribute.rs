@@ -256,11 +256,13 @@ impl MetaPool {
         require!(sp_inx < self.staking_pools.len(), "invalid index");
         let sp = &self.staking_pools[sp_inx];
         require!(!sp.busy_lock, "sp busy");
-        // can not unstake while unstake pending (if it was done on previous epochs)
-        // because it will extend the waiting period
+        // can not unstake while unstake pending (only if it was done on previous epochs)
+        // because it will extend the waiting period. But we allow dust (up to 1e-18N)
+        // sometimes the standard pool contract leaves dust in the accounts
         require!(
-            sp.unstaked == 0 || sp.unstk_req_epoch_height == env::epoch_height(),
-            format!("can not force rebalance-unstake while unstake pending. sp.unstake={}, sp.unstk_req_epoch_height={}, env::epoch_height()={}",
+            // there are no unstake (only dust) or the unstake request is for the current epoch so adding more does not add waiting time
+            sp.unstaked < YOCTO_DUST || sp.unstk_req_epoch_height == env::epoch_height(),
+            format!("can not force rebalance-unstake while unstake pending from previous epochs. sp.unstake={}, sp.unstk_req_epoch_height={}, env::epoch_height()={}",
             sp.unstaked, sp.unstk_req_epoch_height, env::epoch_height())
         );
         // limit for rebalance_unstaking is the should_have of the pool
@@ -647,7 +649,7 @@ impl MetaPool {
 
         let epoch_height = env::epoch_height();
 
-        if sp.staked == 0 && sp.unstaked == 0 {
+        if sp.staked == 0 && sp.unstaked <= YOCTO_DUST {
             return;
         }
 
@@ -792,7 +794,7 @@ impl MetaPool {
         let mut not_found_result_code: i32 = -3;
 
         for (sp_inx, sp) in self.staking_pools.iter().enumerate() {
-            if sp.unstaked > 0 {
+            if sp.unstaked > YOCTO_DUST {
                 if not_found_result_code == -3 {
                     not_found_result_code = -2
                 };
@@ -828,6 +830,7 @@ impl MetaPool {
 
         let sp = &mut self.staking_pools[inx as usize];
         require!(!sp.busy_lock, "sp is busy");
+        // Note: we allow withdrawal, even for dust. So if >0 we proceed
         require!(sp.unstaked > 0, "sp unstaked == 0");
         if !sp.wait_period_ended() {
             panic!(
