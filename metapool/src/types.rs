@@ -29,6 +29,8 @@ pub const K_NEAR: u128 = 1_000 * NEAR;
 ///if there's less than MIN_MOVEMENT NEAR to stake/unstake, wait until there's more to justify the call & tx-fees
 pub const MIN_STAKE_AMOUNT: u128 = ONE_NEAR;
 
+pub const YOCTO_DUST: u128 = 100; // 1e-21 NEAR
+
 pub const TGAS: u64 = 1_000_000_000_000;
 
 /// The number of epochs required for the locked balance to become unlocked.

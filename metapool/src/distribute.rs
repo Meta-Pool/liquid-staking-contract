@@ -633,7 +633,7 @@ impl MetaPool {
 
         let epoch_height = env::epoch_height();
 
-        if sp.staked == 0 && sp.unstaked == 0 {
+        if sp.staked == 0 && sp.unstaked <= YOCTO_DUST {
             return;
         }
 
@@ -782,7 +782,7 @@ impl MetaPool {
         let mut not_found_result_code: i32 = -3;
 
         for (sp_inx, sp) in self.staking_pools.iter().enumerate() {
-            if sp.unstaked > 0 {
+            if sp.unstaked > YOCTO_DUST {
                 if not_found_result_code == -3 {
                     not_found_result_code = -2
                 };
@@ -818,6 +818,7 @@ impl MetaPool {
 
         let sp = &mut self.staking_pools[inx as usize];
         assert!(!sp.busy_lock, "sp is busy");
+        // Note: we allow withdrawal, even for dust. So if >0 we proceed
         assert!(sp.unstaked > 0, "sp unstaked == 0");
         if !sp.wait_period_ended() {
             panic!(

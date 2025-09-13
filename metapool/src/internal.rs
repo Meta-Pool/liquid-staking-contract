@@ -6,8 +6,6 @@ use near_sdk::{
     log, AccountId, Balance, Promise, PromiseResult,
 };
 
-const UNSTAKED_YOCTOS_TO_IGNORE: u128 = 100;
-
 pub struct GSPRUResult {
     pub sp_inx: u16,
     pub extra: u128,
@@ -542,7 +540,7 @@ impl MetaPool {
             if !sp.busy_lock && sp.staked > 0 {
                 // count how how many sps are unblocked, i.e. can receive an unstake request
                 count_with_stake += 1;
-                if sp.unstaked <= UNSTAKED_YOCTOS_TO_IGNORE {
+                if sp.unstaked <= YOCTO_DUST {
                     // 100 yoctos
                     count_unblocked += 1
                 };
@@ -565,9 +563,7 @@ impl MetaPool {
                 // NOTE2: core-contracts/staking-pool is imprecise when unstaking, some times 1 to 10 yoctos remain in "unstaked"
                 //        The bot should synchronize unstaked yoctos before calling this function.
                 // We assume that if sp.unstaked>100 yoctos, a new unstake will cause that amount to be blocked
-                if sp.unstaked <= UNSTAKED_YOCTOS_TO_IGNORE
-                    || sp.unstk_req_epoch_height == env::epoch_height()
-                {
+                if sp.unstaked <= YOCTO_DUST || sp.unstk_req_epoch_height == env::epoch_height() {
                     // does this pool requires un-staking? (has too much staked?)
                     if sp.staked > should_have {
                         // how much?
