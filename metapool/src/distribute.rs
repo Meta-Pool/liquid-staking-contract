@@ -311,7 +311,9 @@ impl MetaPool {
                 // and if selected sp assigned=0 OR what's to rebalance is at least 0.05% of TFS (if there's some unbalance worth solving)
                 if gspru.count_unblocked as u64 >= gspru.count_with_stake as u64 * 40 / 100 && 
                     ( self.staking_pools[gspru.sp_inx as usize].weight_basis_points == 0 || 
-                        gspru.total_extra - self.unstaked_for_rebalance > self.total_for_staking / 2000 )
+                        (gspru.total_extra > self.unstaked_for_rebalance
+                            && gspru.total_extra - self.unstaked_for_rebalance
+                                > self.total_for_staking / 2000))
                 {
                     let to_unstake_for_rebal = std::cmp::min(gspru.extra, unstake_rebalance_left);
                     // Next call affects:
