@@ -738,6 +738,7 @@ impl MetaPool {
             //compute rewards, as new balance minus old balance
             rewards = new_total_balance - sp.total_balance();
         }
+        let old_staked = sp.staked;
 
         log!(
             "sp:{} old_balance:{} new_balance:{} rewards:{} unstaked:{}",
@@ -751,7 +752,19 @@ impl MetaPool {
         //updated accumulated_staked_rewards value for the contract
         self.accumulated_staked_rewards += rewards;
         //updated new "staked" value for this pool
-        sp.staked = new_total_balance - sp.unstaked;
+        //WARN: must not panic (see above). If the pool reports less than what we have unstaked there,
+        //saturate at zero instead of underflowing, otherwise the busy locks would stay set forever
+        sp.staked = new_total_balance.saturating_sub(sp.unstaked);
+
+        //if the pool lost funds (e.g. slashing), write the loss down: reduce both totals by the same amount,
+        //so the share price drops and the contract does not try to re-stake the missing amount
+        //with other users' funds
+        if sp.staked < old_staked {
+            let staked_loss = old_staked - sp.staked;
+            log!("LOSS @{} staked loss of {}", sp.account_id, staked_loss);
+            self.total_actually_staked = self.total_actually_staked.saturating_sub(staked_loss);
+            self.total_for_staking = self.total_for_staking.saturating_sub(staked_loss);
+        }
 
         if rewards > 0 {
             //add to total_for_staking & total_actually_staked, increasing share value for all stNEAR holders
@@ -922,4 +935,68 @@ impl MetaPool {
         apply_pct(self.unstake_for_rebalance_cap_bp, self.total_for_staking)
     }
 
+}
+
+#[cfg(test)]
+mod tests_sp_balance {
+    use super::*;
+    use near_sdk::test_utils::{accounts, VMContextBuilder};
+    use near_sdk::{testing_env, MockedBlockchain};
+
+    fn setup() -> MetaPool {
+        testing_env!(VMContextBuilder::new()
+            .current_account_id(accounts(0))
+            .predecessor_account_id(accounts(0))
+            .build());
+        let mut c = MetaPool::new(
+            accounts(0).to_string(),
+            accounts(1).to_string(),
+            accounts(2).to_string(),
+            "meta.near".to_string(),
+        );
+        c.staking_pools
+            .push(StakingPoolInfo::new("pool1.pool.near".to_string(), 10000));
+        c.contract_busy = true;
+        c.staking_pools[0].busy_lock = true;
+        c
+    }
+
+    #[test]
+    fn pool_loss_is_written_down() {
+        let mut c = setup();
+        c.staking_pools[0].staked = 100 * ONE_NEAR;
+        c.total_for_staking = 100 * ONE_NEAR;
+        c.total_actually_staked = 100 * ONE_NEAR;
+        c.total_stake_shares = 100 * ONE_NEAR;
+        c.on_get_sp_total_balance(0, near_sdk::json_types::U128(90 * ONE_NEAR));
+        assert_eq!(c.staking_pools[0].staked, 90 * ONE_NEAR);
+        assert_eq!(c.total_actually_staked, 90 * ONE_NEAR);
+        assert_eq!(c.total_for_staking, 90 * ONE_NEAR);
+        assert!(!c.contract_busy && !c.staking_pools[0].busy_lock);
+    }
+
+    #[test]
+    fn pool_reporting_less_than_unstaked_does_not_panic() {
+        let mut c = setup();
+        c.staking_pools[0].staked = 50 * ONE_NEAR;
+        c.staking_pools[0].unstaked = 50 * ONE_NEAR;
+        c.total_for_staking = 50 * ONE_NEAR;
+        c.total_actually_staked = 50 * ONE_NEAR;
+        c.on_get_sp_total_balance(0, near_sdk::json_types::U128(30 * ONE_NEAR));
+        assert_eq!(c.staking_pools[0].staked, 0);
+        assert_eq!(c.total_actually_staked, 0);
+        assert!(!c.contract_busy && !c.staking_pools[0].busy_lock);
+    }
+
+    #[test]
+    fn rewards_still_credited() {
+        let mut c = setup();
+        c.staking_pools[0].staked = 100 * ONE_NEAR;
+        c.total_for_staking = 100 * ONE_NEAR;
+        c.total_actually_staked = 100 * ONE_NEAR;
+        c.total_stake_shares = 100 * ONE_NEAR;
+        c.on_get_sp_total_balance(0, near_sdk::json_types::U128(101 * ONE_NEAR));
+        assert_eq!(c.staking_pools[0].staked, 101 * ONE_NEAR);
+        assert_eq!(c.total_actually_staked, 101 * ONE_NEAR);
+    }
 }
