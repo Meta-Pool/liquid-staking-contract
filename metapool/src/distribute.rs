@@ -177,7 +177,7 @@ impl MetaPool {
                 // stake the unstaked in the pool, no-transfer
                 event = "dist.stak.nt"; //not deposited first, so staked funds came from unstaked funds already in the staking-pool
                 sp.unstaked -= amount; //we've now less unstaked in this sp
-                self.total_unstaked_and_waiting -= amount; // contract total of all unstaked & waiting, now there's less there.
+                self.total_unstaked_and_waiting = self.total_unstaked_and_waiting.saturating_sub(amount); // must not panic here: this callback just cleared the busy locks
                                                            // We kept the NEAR in the contract and took from unstaked_and_waiting
                                                            // ... unstaked_and_waiting was in their way to be converted in retrieved_for_unstake_claims
                 self.consider_retrieved_for_unstake_claims(amount); // so this is a special case: the NEAR to stake was taken from total_unstaked_and_waiting,
