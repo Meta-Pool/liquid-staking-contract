@@ -604,12 +604,16 @@ impl MetaPool {
             log!("positive difference {}", difference);
             sp.unstaked = real_unstaked_balance;
             sp.staked = sp.staked.saturating_sub(difference); //the difference was in "our" record of "staked"
+            //keep the invariant total_unstaked_and_waiting == sum(sp.unstaked)
+            self.total_unstaked_and_waiting += difference;
         } else if real_unstaked_balance < sp.unstaked {
             //negative difference
             let difference = sp.unstaked - real_unstaked_balance;
             log!("negative difference {}", difference);
             sp.unstaked = real_unstaked_balance;
             sp.staked += difference; //the difference was in "our" record of "staked"
+            //keep the invariant total_unstaked_and_waiting == sum(sp.unstaked)
+            self.total_unstaked_and_waiting = self.total_unstaked_and_waiting.saturating_sub(difference);
         }
     }
 
@@ -922,4 +926,58 @@ impl MetaPool {
         apply_pct(self.unstake_for_rebalance_cap_bp, self.total_for_staking)
     }
 
+}
+
+#[cfg(test)]
+mod tests_sync_unstaked_total {
+    use super::*;
+    use near_sdk::test_utils::{accounts, VMContextBuilder};
+    use near_sdk::{testing_env, MockedBlockchain};
+
+    fn setup(sp_unstaked: u128) -> MetaPool {
+        testing_env!(VMContextBuilder::new()
+            .current_account_id(accounts(0))
+            .predecessor_account_id(accounts(0))
+            .build());
+        let mut c = MetaPool::new(
+            accounts(0).to_string(),
+            accounts(1).to_string(),
+            accounts(2).to_string(),
+            "meta.near".to_string(),
+        );
+        let mut sp = StakingPoolInfo::new("pool1.pool.near".to_string(), 10000);
+        sp.staked = 1_000 * ONE_NEAR;
+        sp.unstaked = sp_unstaked;
+        c.staking_pools.push(sp);
+        c.total_unstaked_and_waiting = sp_unstaked;
+        c
+    }
+
+    #[test]
+    fn sync_with_positive_difference_keeps_the_total_in_line_with_the_pool() {
+        let mut c = setup(10 * ONE_NEAR);
+        c.on_get_sp_unstaked_balance(0, near_sdk::json_types::U128(10 * ONE_NEAR + 2));
+        assert_eq!(c.staking_pools[0].unstaked, 10 * ONE_NEAR + 2);
+        assert_eq!(c.total_unstaked_and_waiting, 10 * ONE_NEAR + 2);
+    }
+
+    #[test]
+    fn sync_with_negative_difference_keeps_the_total_in_line_with_the_pool() {
+        // honest rounding: the canonical pool reports a few yocto less than we booked
+        let mut c = setup(10 * ONE_NEAR);
+        c.on_get_sp_unstaked_balance(0, near_sdk::json_types::U128(10 * ONE_NEAR - 3));
+        assert_eq!(c.staking_pools[0].unstaked, 10 * ONE_NEAR - 3);
+        assert_eq!(c.total_unstaked_and_waiting, 10 * ONE_NEAR - 3);
+    }
+
+    #[test]
+    fn restake_booking_does_not_underflow_after_a_positive_sync() {
+        // S-M3: after a +2 yocto sync the pool can re-stake sp.unstaked, which is
+        // more than the accumulator used to hold
+        let mut c = setup(10 * ONE_NEAR);
+        c.on_get_sp_unstaked_balance(0, near_sdk::json_types::U128(10 * ONE_NEAR + 2));
+        let amount = c.staking_pools[0].unstaked;
+        c.total_unstaked_and_waiting -= amount; // what the re-stake callback does
+        assert_eq!(c.total_unstaked_and_waiting, 0);
+    }
 }
