@@ -98,3 +98,56 @@ pub trait ExtStakingPool {
 
     fn unstake_all(&mut self);
 }
+
+#[cfg(test)]
+mod tests_staking_paused {
+    use super::*;
+    use near_sdk::test_utils::{accounts, VMContextBuilder};
+    use near_sdk::{testing_env, MockedBlockchain};
+
+    fn setup() -> MetaPool {
+        testing_env!(VMContextBuilder::new()
+            .current_account_id(accounts(0))
+            .predecessor_account_id(accounts(0))
+            .epoch_height(100)
+            .account_balance(1_000 * ONE_NEAR)
+            .build());
+        MetaPool::new(
+            accounts(0).to_string(),
+            accounts(1).to_string(),
+            accounts(2).to_string(),
+            "meta.near".to_string(),
+        )
+    }
+
+    fn setup_needing_stake() -> MetaPool {
+        let mut c = setup();
+        c.staking_pools
+            .push(StakingPoolInfo::new("pool1.pool.near".to_string(), 10000));
+        c.total_for_staking = 100 * ONE_NEAR; // more than actually staked: there is something to stake
+        c.total_actually_staked = 0;
+        c.epoch_stake_orders = 100 * ONE_NEAR;
+        c.total_available = 100 * ONE_NEAR;
+        c.contract_account_balance = 100 * ONE_NEAR;
+        c
+    }
+
+    #[test]
+    fn distribute_staking_does_nothing_while_paused() {
+        let mut c = setup_needing_stake();
+        c.pause_staking();
+        assert!(!c.distribute_staking());
+        assert!(!c.contract_busy);
+        assert!(!c.staking_pools[0].busy_lock);
+        assert_eq!(c.total_actually_staked, 0);
+    }
+
+    #[test]
+    fn distribute_staking_runs_when_not_paused() {
+        let mut c = setup_needing_stake();
+        // not paused: it must go on and lock the pool to stake
+        c.distribute_staking();
+        assert!(c.contract_busy);
+        assert!(c.staking_pools[0].busy_lock);
+    }
+}
