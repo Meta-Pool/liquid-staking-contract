@@ -20,6 +20,13 @@ impl MetaPool {
 
         self.assert_not_busy();
 
+        //operator control: no auto-staking while paused (e.g. while changing staking pools)
+        //users can still deposit, unstake and exit, only the stake distribution to the pools is paused
+        if self.staking_paused {
+            log!("staking is paused");
+            return false;
+        }
+
         //do we need to stake?
         if self.total_for_staking <= self.total_actually_staked {
             log!("no staking needed");
