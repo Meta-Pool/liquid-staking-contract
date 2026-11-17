@@ -704,14 +704,24 @@ impl MetaPool {
     #[callback] marked-arguments are parsed in order. The position within arguments are not important, but the order is.
     If you have 2 arguments marked as #[callback] then you need to expect 2 promise results joined with promise_and
     */
+    /// reads promise result `index` as a JSON U128. None if the promise failed or the data is invalid
+    fn promise_result_u128(index: u64) -> Option<u128> {
+        match env::promise_result(index) {
+            near_sdk::PromiseResult::Successful(bytes) => {
+                near_sdk::serde_json::from_slice::<near_sdk::json_types::U128>(&bytes)
+                    .ok()
+                    .map(|v| v.0)
+            }
+            _ => None,
+        }
+    }
+
     #[private]
-    pub fn on_get_sp_total_balance(
-        &mut self,
-        sp_inx: usize,
-        #[callback] total_balance: U128String,
-    ) {
+    pub fn on_get_sp_total_balance(&mut self, sp_inx: usize) {
         //we enter here after asking the staking-pool how much do we have staked (plus rewards)
-        //total_balance: U128String contains the answer from the staking-pool
+        //The answer is read from the promise result by hand and NOT with `#[callback]`: with
+        //`#[callback]` a failed view call (bricked pool, pool mid-upgrade) panics in the generated
+        //prologue, before the busy locks below are cleared, and the whole contract stays busy.
 
         //new_total_balance has the new staked amount for this pool
         let new_total_balance: u128;
@@ -722,10 +732,19 @@ impl MetaPool {
         sp.busy_lock = false;
         self.contract_busy = false;
 
-        sp.last_asked_rewards_epoch_height = env::epoch_height();
-
         //total_balance informed is staking-pool.staked + staking-pool.unstaked
-        new_total_balance = total_balance.0;
+        new_total_balance = match Self::promise_result_u128(0) {
+            Some(value) => value,
+            None => {
+                log!(
+                    "FAILED @{} get_account_total_balance failed or returned invalid data, nothing updated",
+                    sp.account_id
+                );
+                return;
+            }
+        };
+
+        sp.last_asked_rewards_epoch_height = env::epoch_height();
 
         let rewards: u128;
         if new_total_balance < sp.total_balance() {
@@ -738,6 +757,7 @@ impl MetaPool {
             //compute rewards, as new balance minus old balance
             rewards = new_total_balance - sp.total_balance();
         }
+        let old_staked = sp.staked;
 
         log!(
             "sp:{} old_balance:{} new_balance:{} rewards:{} unstaked:{}",
@@ -751,7 +771,19 @@ impl MetaPool {
         //updated accumulated_staked_rewards value for the contract
         self.accumulated_staked_rewards += rewards;
         //updated new "staked" value for this pool
-        sp.staked = new_total_balance - sp.unstaked;
+        //WARN: must not panic (see above). If the pool reports less than what we have unstaked there,
+        //saturate at zero instead of underflowing, otherwise the busy locks would stay set forever
+        sp.staked = new_total_balance.saturating_sub(sp.unstaked);
+
+        //if the pool lost funds (e.g. slashing), write the loss down: reduce both totals by the same amount,
+        //so the share price drops and the contract does not try to re-stake the missing amount
+        //with other users' funds
+        if sp.staked < old_staked {
+            let staked_loss = old_staked - sp.staked;
+            log!("LOSS @{} staked loss of {}", sp.account_id, staked_loss);
+            self.total_actually_staked = self.total_actually_staked.saturating_sub(staked_loss);
+            self.total_for_staking = self.total_for_staking.saturating_sub(staked_loss);
+        }
 
         if rewards > 0 {
             //add to total_for_staking & total_actually_staked, increasing share value for all stNEAR holders
@@ -922,4 +954,106 @@ impl MetaPool {
         apply_pct(self.unstake_for_rebalance_cap_bp, self.total_for_staking)
     }
 
+}
+
+#[cfg(test)]
+mod tests_sp_balance {
+    use super::*;
+    use near_sdk::test_utils::{accounts, VMContextBuilder};
+    use near_sdk::{testing_env, MockedBlockchain, PromiseResult};
+
+    fn json_u128(v: u128) -> String {
+        format!("\"{}\"", v)
+    }
+
+    fn report_total(c: &mut MetaPool, result: PromiseResult) {
+        testing_env!(
+            VMContextBuilder::new()
+                .current_account_id(accounts(0))
+                .predecessor_account_id(accounts(0))
+                .build(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            vec![result]
+        );
+        c.on_get_sp_total_balance(0);
+    }
+
+    fn setup() -> MetaPool {
+        testing_env!(VMContextBuilder::new()
+            .current_account_id(accounts(0))
+            .predecessor_account_id(accounts(0))
+            .build());
+        let mut c = MetaPool::new(
+            accounts(0).to_string(),
+            accounts(1).to_string(),
+            accounts(2).to_string(),
+            "meta.near".to_string(),
+        );
+        c.staking_pools
+            .push(StakingPoolInfo::new("pool1.pool.near".to_string(), 10000));
+        c.contract_busy = true;
+        c.staking_pools[0].busy_lock = true;
+        c
+    }
+
+    #[test]
+    fn pool_loss_is_written_down() {
+        let mut c = setup();
+        c.staking_pools[0].staked = 100 * ONE_NEAR;
+        c.total_for_staking = 100 * ONE_NEAR;
+        c.total_actually_staked = 100 * ONE_NEAR;
+        c.total_stake_shares = 100 * ONE_NEAR;
+        report_total(&mut c, PromiseResult::Successful(json_u128(90 * ONE_NEAR).into_bytes()));
+        assert_eq!(c.staking_pools[0].staked, 90 * ONE_NEAR);
+        assert_eq!(c.total_actually_staked, 90 * ONE_NEAR);
+        assert_eq!(c.total_for_staking, 90 * ONE_NEAR);
+        assert!(!c.contract_busy && !c.staking_pools[0].busy_lock);
+    }
+
+    #[test]
+    fn pool_reporting_less_than_unstaked_does_not_panic() {
+        let mut c = setup();
+        c.staking_pools[0].staked = 50 * ONE_NEAR;
+        c.staking_pools[0].unstaked = 50 * ONE_NEAR;
+        c.total_for_staking = 50 * ONE_NEAR;
+        c.total_actually_staked = 50 * ONE_NEAR;
+        report_total(&mut c, PromiseResult::Successful(json_u128(30 * ONE_NEAR).into_bytes()));
+        assert_eq!(c.staking_pools[0].staked, 0);
+        assert_eq!(c.total_actually_staked, 0);
+        assert!(!c.contract_busy && !c.staking_pools[0].busy_lock);
+    }
+
+    #[test]
+    fn rewards_still_credited() {
+        let mut c = setup();
+        c.staking_pools[0].staked = 100 * ONE_NEAR;
+        c.total_for_staking = 100 * ONE_NEAR;
+        c.total_actually_staked = 100 * ONE_NEAR;
+        c.total_stake_shares = 100 * ONE_NEAR;
+        report_total(&mut c, PromiseResult::Successful(json_u128(101 * ONE_NEAR).into_bytes()));
+        assert_eq!(c.staking_pools[0].staked, 101 * ONE_NEAR);
+        assert_eq!(c.total_actually_staked, 101 * ONE_NEAR);
+    }
+
+    #[test]
+    fn failed_pool_view_call_still_clears_the_busy_locks() {
+        // S-M1 trigger 1: with `#[callback]` the receipt used to panic before the locks were cleared
+        let mut c = setup();
+        c.staking_pools[0].staked = 100 * ONE_NEAR;
+        c.total_actually_staked = 100 * ONE_NEAR;
+        report_total(&mut c, PromiseResult::Failed);
+        assert!(!c.contract_busy && !c.staking_pools[0].busy_lock);
+        // nothing else changed
+        assert_eq!(c.staking_pools[0].staked, 100 * ONE_NEAR);
+        assert_eq!(c.total_actually_staked, 100 * ONE_NEAR);
+    }
+
+    #[test]
+    fn invalid_pool_answer_still_clears_the_busy_locks() {
+        let mut c = setup();
+        report_total(&mut c, PromiseResult::Successful(b"not json".to_vec()));
+        assert!(!c.contract_busy && !c.staking_pools[0].busy_lock);
+    }
 }
